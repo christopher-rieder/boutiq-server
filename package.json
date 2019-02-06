@@ -1,0 +1,22 @@
+{
+  "name": "boutiq-server",
+  "version": "0.0.1",
+  "description": "Server backend for boutiq app",
+  "main": "main.js",
+  "dependencies": {
+    "bluebird": "^3.5.2",
+    "compression": "^1.7.3",
+    "express": "^4.16.3",
+    "sqlite": "^3.0.0",
+    "sqlite3": "^4.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^1.18.9"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon main.js"
+  },
+  "author": "Christopher Rieder",
+  "license": "ISC"
+}
