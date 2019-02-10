@@ -71,6 +71,18 @@ app.get('/api/factura/last', async (req, res) => {
   }
 });
 
+app.get('/api/cliente/:id', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  const query = `SELECT * FROM CLIENTE WHERE CLIENTE_ID = ${req.params.id}`;
+  console.log(query);
+  try {
+    const results = await db.all(query);
+    res.send(JSON.stringify(results));
+  } catch (err) {
+    console.log(err);
+  }
+});
+
 Promise.resolve()
 // First, try to open the database
   .then(() => db.open(DATABASE_URI, { Promise })) // <=
