@@ -58,6 +58,19 @@ app.get('/api/articulo/:codigo', async (req, res) => {
   }
 });
 
+app.get('/api/factura/last', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  const query = `SELECT MAX(NUMERO_FACTURA) AS LAST FROM FACTURA`;
+  console.log(query);
+  try {
+    const results = await db.all(query);
+    results[0].LAST = results[0].LAST || 1;
+    res.send(JSON.stringify(results[0].LAST));
+  } catch (err) {
+    console.log(err);
+  }
+});
+
 Promise.resolve()
 // First, try to open the database
   .then(() => db.open(DATABASE_URI, { Promise })) // <=
