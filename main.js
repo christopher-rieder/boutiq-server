@@ -51,7 +51,7 @@ app.get('/api/factura/last', async (req, res) => {
   console.log(query);
   try {
     const results = await db.all(query);
-    results[0].LAST = results[0].LAST || 0;
+    results[0].LAST = results[0].LAST || 1;
     res.send(JSON.stringify(results[0].LAST));
   } catch (err) {
     console.log(err);
