@@ -89,11 +89,11 @@ app.post('/api/factura', async (req, res) => {
     VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID},${req.body.ANULADA})`;
     console.log(statement);
     const dbResponse = await db.run(statement);
-    const facturaId = dbResponse.stmt.lastID;
+    const lastId = dbResponse.stmt.lastID;
 
-    console.log('lastId: ' + JSON.stringify(dbResponse.stmt.lastID, null, 2));
+    console.log('lastId: ' + lastId);
     console.log(req.body);
-    return res.status(201).send({ facturaId });
+    return res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
     return res.status(400).send('ERROR: ' + err);
@@ -106,11 +106,29 @@ app.post('/api/itemFactura', async (req, res) => {
     const statement = `INSERT INTO ITEM_FACTURA (FACTURA_ID, CANTIDAD, PRECIO_UNITARIO, DESCUENTO, ARTICULO_ID)
       VALUES (${req.body.FACTURA_ID},${req.body.CANTIDAD},${req.body.PRECIO_UNITARIO},${req.body.DESCUENTO},${req.body.ARTICULO_ID})`;
     const dbResponse = await db.run(statement);
-    const itemFacturaId = dbResponse.stmt.lastID;
+    const lastId = dbResponse.stmt.lastID;
 
-    console.log('lastId: ' + JSON.stringify(dbResponse.stmt.lastID, null, 2));
+    console.log('lastId: ' + lastId);
     console.log(req.body);
-    return res.status(201).send({ itemFacturaId });
+    return res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    return res.status(400).send('ERROR: ' + err);
+  }
+});
+
+app.post('/api/pago', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  try {
+    const statement = `INSERT INTO PAGO (FACTURA_ID, MONTO, TIPO_PAGO_ID, ESTADO)
+      VALUES (${req.body.FACTURA_ID},${req.body.MONTO},${req.body.TIPO_PAGO_ID},"${req.body.ESTADO}")`;
+    console.log(statement);
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+
+    console.log('lastId: ' + lastId);
+    console.log(req.body);
+    return res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
     return res.status(400).send('ERROR: ' + err);
