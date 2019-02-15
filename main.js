@@ -11,24 +11,11 @@ const Promise = require('bluebird');
 const DATABASE_URI = './database/database.db';
 const DEFAULT_PORT = 3000;
 
-const messages = {
-  resultadoVacio: 'Sin resultados'
-};
-
 app.use(function (req, res, next) {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   next();
 });
-
-function chequearResultado (results) {
-  if (results.length !== 0) {
-    console.log(JSON.stringify(results, null, 2));
-    return JSON.stringify(results);
-  } else {
-    return messages.resultadoVacio;
-  }
-}
 
 // Endpoints
 app.get('/', (req, res) => {
@@ -73,7 +60,7 @@ app.get('/api/factura/last', async (req, res) => {
 
 app.get('/api/cliente/:id', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  const query = `SELECT * FROM CLIENTE WHERE CLIENTE_ID = ${req.params.id}`;
+  const query = `SELECT * FROM CLIENTE WHERE id = ${req.params.id}`;
   console.log(query);
   try {
     const results = await db.all(query);
@@ -85,13 +72,48 @@ app.get('/api/cliente/:id', async (req, res) => {
 
 app.get('/api/vendedor/:id', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  const query = `SELECT * FROM VENDEDOR WHERE VENDEDOR_ID = ${req.params.id}`;
+  const query = `SELECT * FROM VENDEDOR WHERE id = ${req.params.id}`;
   console.log(query);
   try {
     const results = await db.all(query);
     res.send(JSON.stringify(results));
   } catch (err) {
     console.log(err);
+  }
+});
+
+app.post('/api/factura', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  try {
+    const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID, ANULADA)
+    VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID},${req.body.ANULADA})`;
+    console.log(statement);
+    const dbResponse = await db.run(statement);
+    const facturaId = dbResponse.stmt.lastID;
+
+    console.log('lastId: ' + JSON.stringify(dbResponse.stmt.lastID, null, 2));
+    console.log(req.body);
+    return res.status(201).send({ facturaId });
+  } catch (err) {
+    console.log(err);
+    return res.status(400).send('ERROR: ' + err);
+  }
+});
+
+app.post('/api/itemFactura', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  try {
+    const statement = `INSERT INTO ITEM_FACTURA (FACTURA_ID, CANTIDAD, PRECIO_UNITARIO, DESCUENTO, ARTICULO_ID)
+      VALUES (${req.body.FACTURA_ID},${req.body.CANTIDAD},${req.body.PRECIO_UNITARIO},${req.body.DESCUENTO},${req.body.ARTICULO_ID})`;
+    const dbResponse = await db.run(statement);
+    const itemFacturaId = dbResponse.stmt.lastID;
+
+    console.log('lastId: ' + JSON.stringify(dbResponse.stmt.lastID, null, 2));
+    console.log(req.body);
+    return res.status(201).send({ itemFacturaId });
+  } catch (err) {
+    console.log(err);
+    return res.status(400).send('ERROR: ' + err);
   }
 });
 
