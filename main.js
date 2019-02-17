@@ -162,27 +162,6 @@ app.post('/api/pago', async (req, res, next) => {
   next();
 });
 
-//   LOGGER('BODY:\n', req.body);
-// }
-// 'GET' MIDDLEWARE HANDLER
-app.use(async (req, res, next) => {
-  if (/POST|PUT|DELETE/i.test(req.method)) {
-    LOGGER('DBUPDATE: ', res.updateQuery);
-    LOGGER('DBQUERY: ', res.selectQuery);
-    try {
-      const results = await db.all(res.selectQuery);
-      if (results.length === 1) {
-        res.json(results[0]);
-      } else {
-        res.json(results);
-      }
-    } catch (err) {
-      console.log(err);
-    }
-  }
-  next();
-});
-
 Promise.resolve()
 // First, try to open the database
   .then(() => db.open(DATABASE_URI, { Promise })) // <=
