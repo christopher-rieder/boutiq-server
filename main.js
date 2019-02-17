@@ -23,10 +23,13 @@ app.use(function (req, res, next) {
   next();
 });
 
+// LOGGER
 app.use(function (req, res, next) {
-  LOGGER('url: ', req.url);
+  LOGGER('-'.repeat(40));
+  LOGGER('URL:     ', req.url);
+  LOGGER('METHOD:  ', req.method);
   if (/POST|PUT|DELETE/i.test(req.method)) {
-    LOGGER('body: ', req.body);
+    LOGGER('BODY:\n', req.body);
   }
   next();
 });
@@ -36,64 +39,55 @@ app.get('/', (req, res) => {
   res.json('Hello World!');
 });
 
-app.get('/api/factura/last', async (req, res, next) => {
-  const query = `SELECT MAX(NUMERO_FACTURA) AS LAST FROM FACTURA`;
-  LOGGER('dbquery: ', query);
-  try {
-    const results = await db.all(query);
-    results[0].LAST = results[0].LAST || 1;
-    const response = results[0].LAST;
-    res.json(response);
-  } catch (err) {
-    LOGGER('ERROR', err);
-  }
+app.get('/api/factura/last', (req, res, next) => {
+  res.selectQuery = `SELECT MAX(NUMERO_FACTURA) AS lastId FROM FACTURA`;
   next();
 });
 
-app.get('/api/turno/actual', async (req, res, next) => {
-  const query = `SELECT * FROM TURNO WHERE id=(SELECT MAX(id) FROM TURNO)`;
-  LOGGER('dbquery: ', query);
-  try {
-    const results = await db.all(query);
-    res.json(results);
-  } catch (err) {
-    console.log(err);
-  }
+app.get('/api/turno/actual', (req, res, next) => {
+  res.selectQuery = `SELECT * FROM TURNO WHERE id=(SELECT MAX(id) FROM TURNO)`;
   next();
 });
 
-app.get('/api/rawTables/:tabla', async (req, res, next) => {
-  const query = `SELECT * FROM ${req.params.tabla}`;
-  LOGGER('dbquery: ', query);
-  try {
-    const results = await db.all(query);
-    res.json(results);
-  } catch (err) {
-    console.log(err);
-  }
+app.get('/api/rawTables/:tabla', (req, res, next) => {
+  res.selectQuery = `SELECT * FROM ${req.params.tabla}`;
   next();
 });
 
-app.get('/api/articulo/codigo/:codigo', async (req, res, next) => {
-  const query = `SELECT * FROM ARTICULO WHERE CODIGO = '${req.params.codigo}'`;
-  LOGGER('dbquery: ', query);
-  try {
-    const results = await db.all(query);
-    res.json(results);
-  } catch (err) {
-    console.log(err);
-  }
+app.get('/api/articulo/codigo/:codigo', (req, res, next) => {
+  res.selectQuery = `SELECT * FROM ARTICULO WHERE CODIGO = '${req.params.codigo}'`;
   next();
 });
 
-app.get('/api/articulo/id/:id', async (req, res, next) => {
-  const query = `SELECT * FROM ARTICULO WHERE id = '${req.params.id}'`;
-  LOGGER('dbquery: ', query);
-  try {
-    const results = await db.all(query);
-    res.json(results);
-  } catch (err) {
-    console.log(err);
+app.get('/api/articulo/id/:id', (req, res, next) => {
+  res.selectQuery = `SELECT * FROM ARTICULO WHERE id = '${req.params.id}'`;
+  next();
+});
+
+app.get('/api/cliente/:id', (req, res, next) => {
+  res.selectQuery = `SELECT * FROM CLIENTE WHERE id = ${req.params.id}`;
+  next();
+});
+
+app.get('/api/vendedor/:id', (req, res, next) => {
+  res.selectQuery = `SELECT * FROM VENDEDOR WHERE id = ${req.params.id}`;
+  next();
+});
+
+// 'GET' MIDDLEWARE HANDLER
+app.use(async (req, res, next) => {
+  if (res.selectQuery && req.method === 'GET') {
+    LOGGER('DBQUERY: ', res.selectQuery);
+    try {
+      const results = await db.all(res.selectQuery);
+      if (results.length === 1) {
+        res.json(results[0]);
+      } else {
+        res.json(results);
+      }
+    } catch (err) {
+      console.log(err);
+    }
   }
   next();
 });
@@ -113,7 +107,6 @@ app.put('/api/articulo', async (req, res, next) => {
       PROMO_BOOL = ${req.body.PROMO_BOOL},
       DESCUENTO_PROMO = ${req.body.DESCUENTO_PROMO}
     WHERE ID = ${req.body.id}`;
-    LOGGER('dbupdate: ', statement);
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
@@ -124,35 +117,10 @@ app.put('/api/articulo', async (req, res, next) => {
   next();
 });
 
-app.get('/api/cliente/:id', async (req, res, next) => {
-  const query = `SELECT * FROM CLIENTE WHERE id = ${req.params.id}`;
-  LOGGER('dbquery: ', query);
-  try {
-    const results = await db.all(query);
-    res.json(results);
-  } catch (err) {
-    console.log(err);
-  }
-  next();
-});
-
-app.get('/api/vendedor/:id', async (req, res, next) => {
-  const query = `SELECT * FROM VENDEDOR WHERE id = ${req.params.id}`;
-  LOGGER('dbquery: ', query);
-  try {
-    const results = await db.all(query);
-    res.json(results);
-  } catch (err) {
-    console.log(err);
-  }
-  next();
-});
-
 app.post('/api/factura', async (req, res, next) => {
   try {
     const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID, ANULADA)
     VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID},${req.body.ANULADA})`;
-    LOGGER('dbupdate: ', statement);
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
@@ -168,7 +136,6 @@ app.post('/api/itemFactura', async (req, res, next) => {
   try {
     const statement = `INSERT INTO ITEM_FACTURA (FACTURA_ID, CANTIDAD, PRECIO_UNITARIO, DESCUENTO, ARTICULO_ID)
       VALUES (${req.body.FACTURA_ID},${req.body.CANTIDAD},${req.body.PRECIO_UNITARIO},${req.body.DESCUENTO},${req.body.ARTICULO_ID})`;
-    LOGGER('dbupdate: ', statement);
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     const updateStock = `UPDATE ARTICULO SET STOCK=(SELECT STOCK FROM ARTICULO WHERE ID=${req.body.ARTICULO_ID})-${req.body.CANTIDAD} WHERE ID=${req.body.ARTICULO_ID}`;
@@ -185,13 +152,33 @@ app.post('/api/pago', async (req, res, next) => {
   try {
     const statement = `INSERT INTO PAGO (FACTURA_ID, MONTO, TIPO_PAGO_ID, ESTADO)
       VALUES (${req.body.FACTURA_ID},${req.body.MONTO},${req.body.TIPO_PAGO_ID},"${req.body.ESTADO}")`;
-    LOGGER('dbupdate: ', statement);
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
     res.status(400).send('ERROR: ' + err);
+  }
+  next();
+});
+
+//   LOGGER('BODY:\n', req.body);
+// }
+// 'GET' MIDDLEWARE HANDLER
+app.use(async (req, res, next) => {
+  if (/POST|PUT|DELETE/i.test(req.method)) {
+    LOGGER('DBUPDATE: ', res.updateQuery);
+    LOGGER('DBQUERY: ', res.selectQuery);
+    try {
+      const results = await db.all(res.selectQuery);
+      if (results.length === 1) {
+        res.json(results[0]);
+      } else {
+        res.json(results);
+      }
+    } catch (err) {
+      console.log(err);
+    }
   }
   next();
 });
