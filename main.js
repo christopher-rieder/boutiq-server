@@ -10,6 +10,19 @@ var multer = require('multer'); // v1.0.5
 var upload = multer(); // for parsing multipart/form-data
 app.use(upload.none());
 
+// LOGGER SET UP
+var fs = require('fs');
+var util = require('util');
+var logFile = fs.createWriteStream('log.txt', { flags: 'a' });
+// Or 'w' to truncate the file every time the process starts.
+var logStdout = process.stdout;
+
+console.log = function () {
+  logFile.write(util.format.apply(null, arguments) + '\n');
+  logStdout.write(util.format.apply(null, arguments) + '\n');
+};
+console.error = console.log;
+
 function LOGGER (...messages) {
   console.log(...messages);
 }
@@ -32,11 +45,10 @@ app.use(function (req, res, next) {
 // LOGGER
 app.use(function (req, res, next) {
   LOGGER('-'.repeat(40));
+  LOGGER('DATETIME', new Date().toLocaleString());
   LOGGER('URL:     ', req.url);
   LOGGER('METHOD:  ', req.method);
-  if (/POST|PUT|DELETE/i.test(req.method)) {
-    LOGGER('BODY:\n', req.body);
-  }
+
   next();
 });
 
@@ -45,6 +57,8 @@ app.use(function (req, res, next) {
   Object.keys(req.body).forEach(key => {
     if (isNaN(req.body[key])) {
       req.body[key] = '"' + req.body[key] + '"';
+    } else {
+      req.body[key] = parseFloat(req.body[key]);
     }
   });
   next();
@@ -173,6 +187,14 @@ app.post('/api/pago', async (req, res, next) => {
   } catch (err) {
     console.log(err);
     res.status(400).send('ERROR: ' + err);
+  }
+  next();
+});
+
+// LOGGER
+app.use(function (req, res, next) {
+  if (/POST|PUT|DELETE/i.test(req.method)) {
+    LOGGER('BODY:\n', req.body);
   }
   next();
 });

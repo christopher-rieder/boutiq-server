@@ -80,3 +80,4 @@ typings/
 .dynamodb/
 database/database.db
 database/boutiqdb.ERB
+log.txt
