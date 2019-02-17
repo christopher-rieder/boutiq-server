@@ -6,9 +6,15 @@ const app = express();
 app.use(compression());
 app.use(express.json());
 
+var multer = require('multer'); // v1.0.5
+var upload = multer(); // for parsing multipart/form-data
+app.use(upload.none());
+
 function LOGGER (...messages) {
   console.log(...messages);
 }
+
+const articuloColumns = ['CODIGO', 'DESCRIPCION', 'PRECIO_LISTA', 'PRECIO_CONTADO', 'PRECIO_COSTO', 'STOCK', 'RUBRO_ID', 'MARCA_ID', 'PROMO_BOOL', 'DESCUENTO_PROMO'];
 
 const db = require('sqlite');
 const Promise = require('bluebird');
@@ -31,6 +37,16 @@ app.use(function (req, res, next) {
   if (/POST|PUT|DELETE/i.test(req.method)) {
     LOGGER('BODY:\n', req.body);
   }
+  next();
+});
+
+app.use(function (req, res, next) {
+  // escape text and add quotes `"`
+  Object.keys(req.body).forEach(key => {
+    if (isNaN(req.body[key])) {
+      req.body[key] = '"' + req.body[key] + '"';
+    }
+  });
   next();
 });
 
@@ -92,23 +108,22 @@ app.use(async (req, res, next) => {
   next();
 });
 
-app.put('/api/articulo', async (req, res, next) => {
+app.post('/api/articulo', async (req, res, next) => {
+  req.body.PROMO_BOOL = !!(req.body.PROMO_BOOL); // CHECK FOR BOOLEAN VALUES, ADD AS FALSE IF NOT EXISTANT
+  let statement;
+  if (isNaN(req.body.id)) { // NEW ITEM
+    let cols = articuloColumns.map(col => req.body[col]);
+    cols.unshift();
+    statement = `INSERT INTO ARTICULO (${articuloColumns}) VALUES (${cols})`;
+    LOGGER('INSERT: ', statement);
+  } else { // UPDATE EXISTING ITEM
+    let cols = articuloColumns.map(col => `${col}=${req.body[col]}`);
+    statement = `UPDATE ARTICULO SET ${cols} WHERE ID = ${req.body.id}`;
+    LOGGER('UPDATE: ', statement);
+  }
   try {
-    const statement = `
-    UPDATE ARTICULO SET
-      CODIGO = "${req.body.CODIGO}",
-      DESCRIPCION = "${req.body.DESCRIPCION}",
-      PRECIO_LISTA = ${req.body.PRECIO_LISTA},
-      PRECIO_CONTADO = ${req.body.PRECIO_CONTADO},
-      PRECIO_COSTO = ${req.body.PRECIO_COSTO},
-      STOCK = ${req.body.STOCK},
-      RUBRO_ID = ${req.body.RUBRO_ID},
-      MARCA_ID = ${req.body.MARCA_ID},
-      PROMO_BOOL = ${req.body.PROMO_BOOL},
-      DESCUENTO_PROMO = ${req.body.DESCUENTO_PROMO}
-    WHERE ID = ${req.body.id}`;
     const dbResponse = await db.run(statement);
-    const lastId = dbResponse.stmt.lastID;
+    const lastId = dbResponse.stmt.lastID || req.body.id;
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
