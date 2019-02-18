@@ -147,6 +147,7 @@ app.post('/api/articulo', async (req, res, next) => {
 });
 
 app.post('/api/factura', async (req, res, next) => {
+  req.body.ANULADA = !!(req.body.ANULADA); // CHECK FOR BOOLEAN VALUES, ADD AS FALSE IF NOT EXISTANT
   try {
     const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID, ANULADA)
     VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID},${req.body.ANULADA})`;
