@@ -16,7 +16,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon main.js"
+    "nodemon_start": "nodemon main.js",
+    "start": "node main.js"
   },
   "author": "Christopher Rieder",
   "license": "ISC"
