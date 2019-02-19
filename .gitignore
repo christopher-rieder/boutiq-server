@@ -78,6 +78,6 @@ typings/
 
 # DynamoDB Local files
 .dynamodb/
-database/database.db
+# database/database.db
 database/boutiqdb.ERB
 log.txt
