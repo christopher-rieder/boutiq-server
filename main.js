@@ -28,6 +28,7 @@ function LOGGER (...messages) {
 }
 
 const articuloColumns = ['CODIGO', 'DESCRIPCION', 'PRECIO_LISTA', 'PRECIO_CONTADO', 'PRECIO_COSTO', 'STOCK', 'RUBRO_ID', 'MARCA_ID', 'PROMO_BOOL', 'DESCUENTO_PROMO'];
+const marcaColumns = ['NOMBRE'];
 
 const db = require('sqlite');
 const Promise = require('bluebird');
@@ -48,6 +49,7 @@ app.use(function (req, res, next) {
   LOGGER('DATETIME', new Date().toLocaleString());
   LOGGER('URL:     ', req.url);
   LOGGER('METHOD:  ', req.method);
+  LOGGER(req.body);
 
   next();
 });
@@ -133,6 +135,31 @@ app.post('/api/articulo', async (req, res, next) => {
   } else { // UPDATE EXISTING ITEM
     let cols = articuloColumns.map(col => `${col}=${req.body[col]}`);
     statement = `UPDATE ARTICULO SET ${cols} WHERE ID = ${req.body.id}`;
+    LOGGER('UPDATE: ', statement);
+  }
+  try {
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID || req.body.id;
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    res.status(400).send('ERROR: ' + err);
+  }
+  next();
+});
+
+app.post('/api/marca', async (req, res, next) => {
+  let statement;
+  if (isNaN(req.body.id)) { // NEW ITEM
+    let cols = marcaColumns.map(col => req.body[col]);
+    cols.unshift();
+    statement = `INSERT INTO MARCA (${marcaColumns}) VALUES (${cols})`;
+    console.log(statement);
+    LOGGER('INSERT: ', statement);
+  } else { // UPDATE EXISTING ITEM
+    let cols = marcaColumns.map(col => `${col}=${req.body[col]}`);
+    statement = `UPDATE MARCA SET ${cols} WHERE ID = ${req.body.id}`;
+    console.log(statement);
     LOGGER('UPDATE: ', statement);
   }
   try {
