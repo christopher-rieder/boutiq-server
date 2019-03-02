@@ -28,7 +28,44 @@ function LOGGER (...messages) {
 }
 
 const articuloColumns = ['CODIGO', 'DESCRIPCION', 'PRECIO_LISTA', 'PRECIO_CONTADO', 'PRECIO_COSTO', 'STOCK', 'RUBRO_ID', 'MARCA_ID', 'PROMO_BOOL', 'DESCUENTO_PROMO'];
-const marcaColumns = ['NOMBRE'];
+
+const facturaQuery = `
+SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO,
+       ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
+       ITEM_FACTURA.CANTIDAD, ITEM_FACTURA.PRECIO_UNITARIO, ITEM_FACTURA.DESCUENTO AS DESCUENTO_ITEM,
+       CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
+       TURNO.id AS TURNO,
+       VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR
+FROM ARTICULO
+INNER JOIN ITEM_FACTURA
+  ON ARTICULO.id = ITEM_FACTURA.ARTICULO_ID
+INNER JOIN FACTURA
+  ON ITEM_FACTURA.FACTURA_ID = FACTURA.id
+INNER JOIN CLIENTE
+  ON FACTURA.CLIENTE_ID = CLIENTE.id
+INNER JOIN TURNO
+  ON FACTURA.TURNO_ID = TURNO.id
+INNER JOIN VENDEDOR
+  ON TURNO.VENDEDOR_ID = VENDEDOR.id
+WHERE FACTURA.ANULADA = 0
+UNION
+SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO,
+  "MISCELANEA", ITEM_MISC.DESCRIPCION,
+  1, ITEM_MISC.PRECIO, 0 AS DESCUENTO_ITEM,
+  CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
+  TURNO.id AS TURNO,
+  VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR
+FROM FACTURA
+INNER JOIN ITEM_MISC
+  ON FACTURA.id = ITEM_MISC.FACTURA_ID
+  INNER JOIN CLIENTE
+  ON FACTURA.CLIENTE_ID = CLIENTE.id
+INNER JOIN TURNO
+  ON FACTURA.TURNO_ID = TURNO.id
+INNER JOIN VENDEDOR
+  ON TURNO.VENDEDOR_ID = VENDEDOR.id
+WHERE FACTURA.ANULADA = 0
+`;
 
 const db = require('sqlite');
 const Promise = require('bluebird');
@@ -124,6 +161,65 @@ app.use(async (req, res, next) => {
   next();
 });
 
+app.get('/api/factura/all', async (req, res, next) => {
+  const selectQuery = facturaQuery;
+  LOGGER('DBQUERY: ', selectQuery);
+  try {
+    const results = await db.all(selectQuery);
+    const pagos = await db.all(`
+    SELECT PAGO.MONTO, PAGO.ESTADO, FACTURA.NUMERO_FACTURA, TIPO_PAGO.NOMBRE
+    FROM PAGO
+    INNER JOIN FACTURA
+      ON PAGO.FACTURA_ID = FACTURA.id
+    INNER JOIN TIPO_PAGO
+      ON PAGO.TIPO_PAGO_ID = TIPO_PAGO.id
+    `);
+
+    const newArr = [];
+    results.forEach((item, index) => {
+      const {NUMERO_FACTURA, FECHA_HORA, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO, CLIENTE_ID, CLIENTE, TURNO, VENDEDOR_ID, VENDEDOR, DESCUENTO, DESCUENTO_ITEM} = item;
+
+      let index2 = newArr.findIndex(item2 => NUMERO_FACTURA === item2.NUMERO_FACTURA);
+      if (index2 === -1) {
+        newArr.push({
+          NUMERO_FACTURA,
+          FECHA_HORA,
+          CLIENTE: {CLIENTE_ID, NOMBRE: CLIENTE},
+          VENDEDOR: {VENDEDOR_ID, NOMBRE: VENDEDOR},
+          TURNO,
+          DESCUENTO,
+          ITEMS: [],
+          PAGOS: []
+        });
+        index2 = newArr.length - 1;
+      }
+      newArr[index2].ITEMS.push({
+        CODIGO,
+        DESCRIPCION,
+        CANTIDAD,
+        PRECIO_UNITARIO,
+        PRECIO_TOTAL: PRECIO_UNITARIO * CANTIDAD,
+        DESCUENTO_ITEM
+      });
+    });
+    pagos.forEach(pago => {
+      const factura = newArr.find(f => f.NUMERO_FACTURA === pago.NUMERO_FACTURA);
+      if (factura) {
+        factura.PAGOS.push({
+          MONTO: pago.MONTO,
+          ESTADO: pago.ESTADO,
+          TIPO: pago.NOMBRE
+        });
+      }
+    });
+    res.json(newArr);
+  } catch (err) {
+    console.log(err);
+  }
+
+  next();
+});
+
 app.post('/api/articulo', async (req, res, next) => {
   req.body.PROMO_BOOL = !!(req.body.PROMO_BOOL); // CHECK FOR BOOLEAN VALUES, ADD AS FALSE IF NOT EXISTANT
   let statement;
@@ -148,23 +244,25 @@ app.post('/api/articulo', async (req, res, next) => {
   next();
 });
 
-app.post('/api/marca', async (req, res, next) => {
+app.post('/api/crud/:table', async (req, res, next) => {
   let statement;
+  let cols = Object.keys(req.body).filter(e => e !== 'id');
+
   if (isNaN(req.body.id)) { // NEW ITEM
-    let cols = marcaColumns.map(col => req.body[col]);
-    cols.unshift();
-    statement = `INSERT INTO MARCA (${marcaColumns}) VALUES (${cols})`;
+    let colValues = cols.map(col => req.body[col]);
+    statement = `INSERT INTO MARCA (${cols}) VALUES (${colValues})`;
     console.log(statement);
     LOGGER('INSERT: ', statement);
   } else { // UPDATE EXISTING ITEM
-    let cols = marcaColumns.map(col => `${col}=${req.body[col]}`);
-    statement = `UPDATE MARCA SET ${cols} WHERE ID = ${req.body.id}`;
+    let colValues = cols.map(col => `${col}=${req.body[col]}`);
+    statement = `UPDATE MARCA SET ${colValues} WHERE ID = ${req.body.id}`;
     console.log(statement);
     LOGGER('UPDATE: ', statement);
   }
   try {
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID || req.body.id;
+    console.log('lastid', lastId);
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
@@ -176,8 +274,8 @@ app.post('/api/marca', async (req, res, next) => {
 app.post('/api/factura', async (req, res, next) => {
   req.body.ANULADA = !!(req.body.ANULADA); // CHECK FOR BOOLEAN VALUES, ADD AS FALSE IF NOT EXISTANT
   try {
-    const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID, ANULADA)
-    VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID},${req.body.ANULADA})`;
+    const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID)
+    VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID})`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
@@ -193,6 +291,7 @@ app.post('/api/itemFactura', async (req, res, next) => {
   try {
     const statement = `INSERT INTO ITEM_FACTURA (FACTURA_ID, CANTIDAD, PRECIO_UNITARIO, DESCUENTO, ARTICULO_ID)
       VALUES (${req.body.FACTURA_ID},${req.body.CANTIDAD},${req.body.PRECIO_UNITARIO},${req.body.DESCUENTO},${req.body.ARTICULO_ID})`;
+    console.log(statement);
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     const updateStock = `UPDATE ARTICULO SET STOCK=(SELECT STOCK FROM ARTICULO WHERE ID=${req.body.ARTICULO_ID})-${req.body.CANTIDAD} WHERE ID=${req.body.ARTICULO_ID}`;
