@@ -30,7 +30,7 @@ function LOGGER (...messages) {
 const articuloColumns = ['CODIGO', 'DESCRIPCION', 'PRECIO_LISTA', 'PRECIO_CONTADO', 'PRECIO_COSTO', 'STOCK', 'RUBRO_ID', 'MARCA_ID', 'PROMO_BOOL', 'DESCUENTO_PROMO'];
 
 const facturaQuery = `
-SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO,
+SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
        ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
        ITEM_FACTURA.CANTIDAD, ITEM_FACTURA.PRECIO_UNITARIO, ITEM_FACTURA.DESCUENTO AS DESCUENTO_ITEM,
        CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
@@ -49,7 +49,7 @@ INNER JOIN VENDEDOR
   ON TURNO.VENDEDOR_ID = VENDEDOR.id
 WHERE FACTURA.ANULADA = 0
 UNION
-SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO,
+SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
   "MISCELANEA", ITEM_MISC.DESCRIPCION,
   1, ITEM_MISC.PRECIO, 0 AS DESCUENTO_ITEM,
   CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
@@ -80,6 +80,18 @@ app.use(function (req, res, next) {
   next();
 });
 
+app.use(function (req, res, next) {
+  // escape text and add quotes `"`
+  Object.keys(req.body).forEach(key => {
+    if (isNaN(req.body[key]) || req.body[key] === '') {
+      req.body[key] = '"' + req.body[key] + '"';
+    } else {
+      req.body[key] = parseFloat(req.body[key]);
+    }
+  });
+  next();
+});
+
 // LOGGER
 app.use(function (req, res, next) {
   LOGGER('-'.repeat(40));
@@ -88,18 +100,6 @@ app.use(function (req, res, next) {
   LOGGER('METHOD:  ', req.method);
   LOGGER(req.body);
 
-  next();
-});
-
-app.use(function (req, res, next) {
-  // escape text and add quotes `"`
-  Object.keys(req.body).forEach(key => {
-    if (isNaN(req.body[key])) {
-      req.body[key] = '"' + req.body[key] + '"';
-    } else {
-      req.body[key] = parseFloat(req.body[key]);
-    }
-  });
   next();
 });
 
@@ -167,17 +167,19 @@ app.get('/api/factura/all', async (req, res, next) => {
   try {
     const results = await db.all(selectQuery);
     const pagos = await db.all(`
-    SELECT PAGO.MONTO, PAGO.ESTADO, FACTURA.NUMERO_FACTURA, TIPO_PAGO.NOMBRE
+    SELECT PAGO.MONTO, ESTADO_PAGO.NOMBRE, FACTURA.NUMERO_FACTURA, TIPO_PAGO.NOMBRE
     FROM PAGO
     INNER JOIN FACTURA
       ON PAGO.FACTURA_ID = FACTURA.id
     INNER JOIN TIPO_PAGO
       ON PAGO.TIPO_PAGO_ID = TIPO_PAGO.id
+    INNER JOIN ESTADO_PAGO
+      ON PAGO.ESTADO_ID = ESTADO_PAGO.id
     `);
 
     const newArr = [];
     results.forEach((item, index) => {
-      const {NUMERO_FACTURA, FECHA_HORA, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO, CLIENTE_ID, CLIENTE, TURNO, VENDEDOR_ID, VENDEDOR, DESCUENTO, DESCUENTO_ITEM} = item;
+      const {NUMERO_FACTURA, FECHA_HORA, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO, CLIENTE_ID, CLIENTE, TURNO, VENDEDOR_ID, VENDEDOR, DESCUENTO, OBSERVACIONES, DESCUENTO_ITEM} = item;
 
       let index2 = newArr.findIndex(item2 => NUMERO_FACTURA === item2.NUMERO_FACTURA);
       if (index2 === -1) {
@@ -188,6 +190,7 @@ app.get('/api/factura/all', async (req, res, next) => {
           VENDEDOR: {VENDEDOR_ID, NOMBRE: VENDEDOR},
           TURNO,
           DESCUENTO,
+          OBSERVACIONES,
           ITEMS: [],
           PAGOS: []
         });
@@ -274,8 +277,8 @@ app.post('/api/crud/:table', async (req, res, next) => {
 app.post('/api/factura', async (req, res, next) => {
   req.body.ANULADA = !!(req.body.ANULADA); // CHECK FOR BOOLEAN VALUES, ADD AS FALSE IF NOT EXISTANT
   try {
-    const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID)
-    VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID})`;
+    const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID, OBSERVACIONES)
+    VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID},${req.body.OBSERVACIONES})`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
