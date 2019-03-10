@@ -192,13 +192,13 @@ app.get('/api/factura/all', async (req, res, next) => {
       ON PAGO.ESTADO_ID = ESTADO_PAGO.id
     `);
 
-    const newArr = [];
+    const resultArray = [];
     results.forEach((item, index) => {
       const {NUMERO_FACTURA, FECHA_HORA, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO, CLIENTE_ID, CLIENTE, TURNO, VENDEDOR_ID, VENDEDOR, DESCUENTO, OBSERVACIONES, DESCUENTO_ITEM} = item;
 
-      let index2 = newArr.findIndex(item2 => NUMERO_FACTURA === item2.NUMERO_FACTURA);
+      let index2 = resultArray.findIndex(item2 => NUMERO_FACTURA === item2.NUMERO_FACTURA);
       if (index2 === -1) {
-        newArr.push({
+        resultArray.push({
           NUMERO_FACTURA,
           FECHA_HORA,
           CLIENTE: {CLIENTE_ID, NOMBRE: CLIENTE},
@@ -209,9 +209,9 @@ app.get('/api/factura/all', async (req, res, next) => {
           ITEMS: [],
           PAGOS: []
         });
-        index2 = newArr.length - 1;
+        index2 = resultArray.length - 1;
       }
-      newArr[index2].ITEMS.push({
+      resultArray[index2].ITEMS.push({
         CODIGO,
         DESCRIPCION,
         CANTIDAD,
@@ -221,7 +221,7 @@ app.get('/api/factura/all', async (req, res, next) => {
       });
     });
     pagos.forEach(pago => {
-      const factura = newArr.find(f => f.NUMERO_FACTURA === pago.NUMERO_FACTURA);
+      const factura = resultArray.find(f => f.NUMERO_FACTURA === pago.NUMERO_FACTURA);
       if (factura) {
         factura.PAGOS.push({
           MONTO: pago.MONTO,
@@ -230,11 +230,57 @@ app.get('/api/factura/all', async (req, res, next) => {
         });
       }
     });
-    res.json(newArr);
+    res.json(resultArray);
   } catch (err) {
     console.log(err);
   }
 
+  next();
+});
+
+app.get('/api/compra/all', async (req, res, next) => {
+  const selectQuery = `
+  SELECT COMPRA.NUMERO_COMPRA, COMPRA.FECHA_HORA, COMPRA.OBSERVACIONES,
+         PROVEEDOR.id AS PROVEEDOR_ID, PROVEEDOR.NOMBRE AS PROVEEDOR,
+         ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
+         ITEM_COMPRA.CANTIDAD
+  FROM COMPRA
+  INNER JOIN ITEM_COMPRA
+    ON COMPRA.id = ITEM_COMPRA.COMPRA_ID
+  INNER JOIN ARTICULO
+    ON ITEM_COMPRA.ARTICULO_ID = ARTICULO.id
+  INNER JOIN PROVEEDOR
+    ON COMPRA.PROVEEDOR_ID = PROVEEDOR.id
+  WHERE COMPRA.ANULADA = 0
+  `;
+  LOGGER('DBQUERY: ', selectQuery);
+  try {
+    const results = await db.all(selectQuery);
+    const resultArray = [];
+    results.forEach((item, index) => {
+      const {NUMERO_COMPRA, FECHA_HORA, OBSERVACIONES, PROVEEDOR_ID, PROVEEDOR, CODIGO, DESCRIPCION, CANTIDAD} = item;
+
+      let index2 = resultArray.findIndex(item2 => NUMERO_COMPRA === item2.NUMERO_COMPRA);
+      if (index2 === -1) {
+        resultArray.push({
+          NUMERO_COMPRA,
+          FECHA_HORA,
+          PROVEEDOR: {PROVEEDOR_ID, NOMBRE: PROVEEDOR},
+          OBSERVACIONES,
+          ITEMS: []
+        });
+        index2 = resultArray.length - 1;
+      }
+      resultArray[index2].ITEMS.push({
+        CODIGO,
+        DESCRIPCION,
+        CANTIDAD
+      });
+    });
+    res.json(resultArray);
+  } catch (err) {
+    console.log(err);
+  }
   next();
 });
 
