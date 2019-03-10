@@ -27,7 +27,7 @@ function LOGGER (...messages) {
   console.log(...messages);
 }
 
-const articuloColumns = ['CODIGO', 'DESCRIPCION', 'PRECIO_LISTA', 'PRECIO_CONTADO', 'PRECIO_COSTO', 'STOCK', 'RUBRO_ID', 'MARCA_ID', 'PROMO_BOOL', 'DESCUENTO_PROMO'];
+const articuloColumns = ['CODIGO', 'DESCRIPCION', 'PRECIO_LISTA', 'PRECIO_CONTADO', 'PRECIO_COSTO', 'STOCK', 'RUBRO_ID', 'MARCA_ID', 'DESCUENTO'];
 
 const facturaQuery = `
 SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
@@ -103,13 +103,30 @@ app.use(function (req, res, next) {
   next();
 });
 
-// Endpoints
-app.get('/', (req, res) => {
-  res.json('Hello World!');
+/* SIMPLE GET FOR CRUD TABLES */
+const crudTables = ['cliente', 'vendedor', 'proveedor'];
+const crudEndpoints = crudTables.map(tabla => '/api/' + tabla);
+app.get(crudEndpoints, (req, res, next) => {
+  const tabla = req.path.split('/')[2];
+  res.selectQuery = `SELECT * FROM ${tabla}`;
+  next();
+});
+
+/* SIMPLE GET ITEM FOR CRUD TABLES */
+const crudEndpointsItems = crudEndpoints.map(e => e + '/:id');
+app.get(crudEndpointsItems, (req, res, next) => {
+  const tabla = req.path.split('/')[2];
+  res.selectQuery = `SELECT * FROM ${tabla} WHERE ID=${req.params.id}`;
+  next();
 });
 
 app.get('/api/factura/last', (req, res, next) => {
   res.selectQuery = `SELECT MAX(NUMERO_FACTURA) AS lastId FROM FACTURA`;
+  next();
+});
+
+app.get('/api/compra/last', (req, res, next) => {
+  res.selectQuery = `SELECT MAX(NUMERO_COMPRA) AS lastId FROM COMPRA`;
   next();
 });
 
@@ -119,6 +136,14 @@ app.get('/api/turno/actual', (req, res, next) => {
 });
 
 app.get('/api/rawTables/:tabla', (req, res, next) => {
+  if (req.params.tabla === 'full_articulos') {
+    console.log('fetching articulos');
+    console.log('=============================================');
+    console.log('=============================================');
+    console.log('=============================================');
+    console.log('=============================================');
+    console.log('=============================================');
+  }
   res.selectQuery = `SELECT * FROM ${req.params.tabla}`;
   next();
 });
@@ -130,16 +155,6 @@ app.get('/api/articulo/codigo/:codigo', (req, res, next) => {
 
 app.get('/api/articulo/id/:id', (req, res, next) => {
   res.selectQuery = `SELECT * FROM ARTICULO WHERE id = '${req.params.id}'`;
-  next();
-});
-
-app.get('/api/cliente/:id', (req, res, next) => {
-  res.selectQuery = `SELECT * FROM CLIENTE WHERE id = ${req.params.id}`;
-  next();
-});
-
-app.get('/api/vendedor/:id', (req, res, next) => {
-  res.selectQuery = `SELECT * FROM VENDEDOR WHERE id = ${req.params.id}`;
   next();
 });
 
@@ -224,9 +239,8 @@ app.get('/api/factura/all', async (req, res, next) => {
 });
 
 app.post('/api/articulo', async (req, res, next) => {
-  req.body.PROMO_BOOL = !!(req.body.PROMO_BOOL); // CHECK FOR BOOLEAN VALUES, ADD AS FALSE IF NOT EXISTANT
   let statement;
-  if (isNaN(req.body.id)) { // NEW ITEM
+  if (isNaN(req.body.id) || req.body.id === 0) { // NEW ITEM
     let cols = articuloColumns.map(col => req.body[col]);
     cols.unshift();
     statement = `INSERT INTO ARTICULO (${articuloColumns}) VALUES (${cols})`;
@@ -241,8 +255,7 @@ app.post('/api/articulo', async (req, res, next) => {
     const lastId = dbResponse.stmt.lastID || req.body.id;
     res.status(201).send({ lastId });
   } catch (err) {
-    console.log(err);
-    res.status(400).send('ERROR: ' + err);
+    res.status(400).send({message: err.message});
   }
   next();
 });
@@ -307,10 +320,44 @@ app.post('/api/itemFactura', async (req, res, next) => {
   next();
 });
 
+app.post('/api/compra', async (req, res, next) => {
+  try {
+    const statement = `INSERT INTO COMPRA (NUMERO_COMPRA, FECHA_HORA, PROVEEDOR_ID, OBSERVACIONES)
+    VALUES (${req.body.NUMERO_COMPRA},${req.body.FECHA_HORA},${req.body.PROVEEDOR_ID},${req.body.OBSERVACIONES})`;
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    next();
+    res.status(400).send('ERROR: ' + err);
+  }
+  next();
+});
+
+app.post('/api/itemCompra', async (req, res, next) => {
+  try {
+    const statement = `INSERT INTO ITEM_COMPRA (COMPRA_ID, CANTIDAD, ARTICULO_ID)
+      VALUES (${req.body.COMPRA_ID},${req.body.CANTIDAD},${req.body.ARTICULO_ID})`;
+    console.log(statement);
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+    const updateStock = `UPDATE ARTICULO SET STOCK=(SELECT STOCK FROM ARTICULO WHERE ID=${req.body.ARTICULO_ID})+${req.body.CANTIDAD} WHERE ID=${req.body.ARTICULO_ID}`;
+    const dbResponse2 = await db.run(updateStock);
+    console.log(dbResponse2.stmt);
+
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    res.status(400).send('ERROR: ' + err);
+  }
+  next();
+});
+
 app.post('/api/pago', async (req, res, next) => {
   try {
-    const statement = `INSERT INTO PAGO (FACTURA_ID, MONTO, TIPO_PAGO_ID, ESTADO)
-      VALUES (${req.body.FACTURA_ID},${req.body.MONTO},${req.body.TIPO_PAGO_ID},${req.body.ESTADO})`;
+    const statement = `INSERT INTO PAGO (FACTURA_ID, MONTO, TIPO_PAGO_ID, ESTADO_ID)
+      VALUES (${req.body.FACTURA_ID},${req.body.MONTO},${req.body.TIPO_PAGO_ID},${req.body.ESTADO_ID})`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
