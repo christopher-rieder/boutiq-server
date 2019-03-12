@@ -29,44 +29,6 @@ function LOGGER (...messages) {
 
 const articuloColumns = ['CODIGO', 'DESCRIPCION', 'PRECIO_LISTA', 'PRECIO_CONTADO', 'PRECIO_COSTO', 'STOCK', 'RUBRO_ID', 'MARCA_ID', 'DESCUENTO'];
 
-const facturaQuery = `
-SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
-       ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
-       ITEM_FACTURA.CANTIDAD, ITEM_FACTURA.PRECIO_UNITARIO, ITEM_FACTURA.DESCUENTO AS DESCUENTO_ITEM,
-       CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
-       TURNO.id AS TURNO,
-       VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR
-FROM ARTICULO
-INNER JOIN ITEM_FACTURA
-  ON ARTICULO.id = ITEM_FACTURA.ARTICULO_ID
-INNER JOIN FACTURA
-  ON ITEM_FACTURA.FACTURA_ID = FACTURA.id
-INNER JOIN CLIENTE
-  ON FACTURA.CLIENTE_ID = CLIENTE.id
-INNER JOIN TURNO
-  ON FACTURA.TURNO_ID = TURNO.id
-INNER JOIN VENDEDOR
-  ON TURNO.VENDEDOR_ID = VENDEDOR.id
-WHERE FACTURA.ANULADA = 0
-UNION
-SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
-  "MISCELANEA", ITEM_MISC.DESCRIPCION,
-  1, ITEM_MISC.PRECIO, 0 AS DESCUENTO_ITEM,
-  CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
-  TURNO.id AS TURNO,
-  VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR
-FROM FACTURA
-INNER JOIN ITEM_MISC
-  ON FACTURA.id = ITEM_MISC.FACTURA_ID
-  INNER JOIN CLIENTE
-  ON FACTURA.CLIENTE_ID = CLIENTE.id
-INNER JOIN TURNO
-  ON FACTURA.TURNO_ID = TURNO.id
-INNER JOIN VENDEDOR
-  ON TURNO.VENDEDOR_ID = VENDEDOR.id
-WHERE FACTURA.ANULADA = 0
-`;
-
 const db = require('sqlite');
 const Promise = require('bluebird');
 const DATABASE_URI = './database/database.db';
@@ -130,6 +92,11 @@ app.get('/api/compra/last', (req, res, next) => {
   next();
 });
 
+app.get('/api/se%C3%B1a/last', (req, res, next) => {
+  res.selectQuery = `SELECT MAX(NUMERO_SEÑA) AS lastId FROM SEÑA`;
+  next();
+});
+
 app.get('/api/turno/actual', (req, res, next) => {
   res.selectQuery = `SELECT * FROM TURNO WHERE id=(SELECT MAX(id) FROM TURNO)`;
   next();
@@ -148,13 +115,41 @@ app.get('/api/rawTables/:tabla', (req, res, next) => {
   next();
 });
 
+app.get('/api/pago/pendientes', (req, res, next) => {
+  res.selectQuery = `
+  SELECT PAGO.*, FACTURA.FECHA_HORA, ESTADO_PAGO.NOMBRE AS ESTADO, FACTURA.NUMERO_FACTURA, TIPO_PAGO.NOMBRE AS TIPO_PAGO
+  FROM PAGO
+  INNER JOIN FACTURA
+    ON PAGO.FACTURA_ID = FACTURA.id
+  INNER JOIN TIPO_PAGO
+    ON PAGO.TIPO_PAGO_ID = TIPO_PAGO.id
+  INNER JOIN ESTADO_PAGO
+    ON PAGO.ESTADO_ID = ESTADO_PAGO.id
+  `;
+  next();
+});
+
 app.get('/api/articulo/codigo/:codigo', (req, res, next) => {
-  res.selectQuery = `SELECT * FROM ARTICULO WHERE CODIGO = '${req.params.codigo}'`;
+  res.selectQuery = `
+  SELECT ARTICULO.*, MARCA.NOMBRE AS MARCA_NOMBRE, RUBRO.NOMBRE AS RUBRO_NOMBRE
+  FROM ARTICULO
+  INNER JOIN MARCA
+    ON ARTICULO.MARCA_ID=MARCA.id
+  INNER JOIN RUBRO
+    ON ARTICULO.RUBRO_ID=RUBRO.id
+  WHERE CODIGO = '${req.params.codigo}'`;
   next();
 });
 
 app.get('/api/articulo/id/:id', (req, res, next) => {
-  res.selectQuery = `SELECT * FROM ARTICULO WHERE id = '${req.params.id}'`;
+  res.selectQuery = `
+  SELECT ARTICULO.*, MARCA.NOMBRE AS MARCA_NOMBRE, RUBRO.NOMBRE AS RUBRO_NOMBRE
+  FROM ARTICULO
+  INNER JOIN MARCA
+    ON ARTICULO.MARCA_ID=MARCA.id
+  INNER JOIN RUBRO
+    ON ARTICULO.RUBRO_ID=RUBRO.id
+  WHERE ARTICULO.id = '${req.params.id}'`;
   next();
 });
 
@@ -164,11 +159,7 @@ app.use(async (req, res, next) => {
     LOGGER('DBQUERY: ', res.selectQuery);
     try {
       const results = await db.all(res.selectQuery);
-      if (results.length === 1) {
-        res.json(results[0]);
-      } else {
-        res.json(results);
-      }
+      res.json(results);
     } catch (err) {
       console.log(err);
     }
@@ -176,13 +167,49 @@ app.use(async (req, res, next) => {
   next();
 });
 
-app.get('/api/factura/all', async (req, res, next) => {
-  const selectQuery = facturaQuery;
+app.get('/api/factura/:id', async (req, res, next) => {
+  const selectQuery = `
+  SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
+        ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
+        ITEM_FACTURA.CANTIDAD, ITEM_FACTURA.PRECIO_UNITARIO, ITEM_FACTURA.DESCUENTO AS DESCUENTO_ITEM,
+        CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
+        TURNO.id AS TURNO,
+        VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR
+  FROM ARTICULO
+  INNER JOIN ITEM_FACTURA
+    ON ARTICULO.id = ITEM_FACTURA.ARTICULO_ID
+  INNER JOIN FACTURA
+    ON ITEM_FACTURA.FACTURA_ID = FACTURA.id
+  INNER JOIN CLIENTE
+    ON FACTURA.CLIENTE_ID = CLIENTE.id
+  INNER JOIN TURNO
+    ON FACTURA.TURNO_ID = TURNO.id
+  INNER JOIN VENDEDOR
+    ON TURNO.VENDEDOR_ID = VENDEDOR.id
+  WHERE FACTURA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND FACTURA.id=' + parseInt(req.params.id)}
+  UNION
+  SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
+    "MISCELANEA", ITEM_MISC.DESCRIPCION,
+    1, ITEM_MISC.PRECIO, 0 AS DESCUENTO_ITEM,
+    CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
+    TURNO.id AS TURNO,
+    VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR
+  FROM FACTURA
+  INNER JOIN ITEM_MISC
+    ON FACTURA.id = ITEM_MISC.FACTURA_ID
+  INNER JOIN CLIENTE
+    ON FACTURA.CLIENTE_ID = CLIENTE.id
+  INNER JOIN TURNO
+    ON FACTURA.TURNO_ID = TURNO.id
+  INNER JOIN VENDEDOR
+    ON TURNO.VENDEDOR_ID = VENDEDOR.id
+  WHERE FACTURA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND FACTURA.id=' + parseInt(req.params.id)}
+  `;
   LOGGER('DBQUERY: ', selectQuery);
   try {
     const results = await db.all(selectQuery);
     const pagos = await db.all(`
-    SELECT PAGO.MONTO, ESTADO_PAGO.NOMBRE, FACTURA.NUMERO_FACTURA, TIPO_PAGO.NOMBRE
+    SELECT PAGO.*, ESTADO_PAGO.NOMBRE AS ESTADO, FACTURA.NUMERO_FACTURA, TIPO_PAGO.NOMBRE AS TIPO_PAGO
     FROM PAGO
     INNER JOIN FACTURA
       ON PAGO.FACTURA_ID = FACTURA.id
@@ -224,9 +251,11 @@ app.get('/api/factura/all', async (req, res, next) => {
       const factura = resultArray.find(f => f.NUMERO_FACTURA === pago.NUMERO_FACTURA);
       if (factura) {
         factura.PAGOS.push({
+          id: pago.id,
           MONTO: pago.MONTO,
-          ESTADO: pago.ESTADO,
-          TIPO: pago.NOMBRE
+          NUMERO_FACTURA: pago.FACTURA_ID,
+          ESTADO: {id: pago.ESTADO_ID, NOMBRE: pago.ESTADO},
+          TIPO_PAGO: {id: pago.TIPO_PAGO_ID, NOMBRE: pago.TIPO_PAGO}
         });
       }
     });
@@ -312,12 +341,12 @@ app.post('/api/crud/:table', async (req, res, next) => {
 
   if (isNaN(req.body.id)) { // NEW ITEM
     let colValues = cols.map(col => req.body[col]);
-    statement = `INSERT INTO MARCA (${cols}) VALUES (${colValues})`;
+    statement = `INSERT INTO ${req.params.table} (${cols}) VALUES (${colValues})`;
     console.log(statement);
     LOGGER('INSERT: ', statement);
   } else { // UPDATE EXISTING ITEM
     let colValues = cols.map(col => `${col}=${req.body[col]}`);
-    statement = `UPDATE MARCA SET ${colValues} WHERE ID = ${req.body.id}`;
+    statement = `UPDATE ${req.params.table} SET ${colValues} WHERE ID = ${req.body.id}`;
     console.log(statement);
     LOGGER('UPDATE: ', statement);
   }
@@ -328,7 +357,7 @@ app.post('/api/crud/:table', async (req, res, next) => {
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
-    res.status(400).send('ERROR: ' + err);
+    res.status(400).send({message: err.message});
   }
   next();
 });
@@ -344,7 +373,7 @@ app.post('/api/factura', async (req, res, next) => {
   } catch (err) {
     console.log(err);
     next();
-    res.status(400).send('ERROR: ' + err);
+    res.status(400).send({message: err.message});
   }
   next();
 });
@@ -361,7 +390,7 @@ app.post('/api/itemFactura', async (req, res, next) => {
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
-    res.status(400).send('ERROR: ' + err);
+    res.status(400).send({message: err.message});
   }
   next();
 });
@@ -376,7 +405,7 @@ app.post('/api/compra', async (req, res, next) => {
   } catch (err) {
     console.log(err);
     next();
-    res.status(400).send('ERROR: ' + err);
+    res.status(400).send({message: err.message});
   }
   next();
 });
@@ -395,7 +424,7 @@ app.post('/api/itemCompra', async (req, res, next) => {
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
-    res.status(400).send('ERROR: ' + err);
+    res.status(400).send({message: err.message});
   }
   next();
 });
@@ -409,7 +438,20 @@ app.post('/api/pago', async (req, res, next) => {
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
-    res.status(400).send('ERROR: ' + err);
+    res.status(400).send({message: err.message});
+  }
+  next();
+});
+
+app.post('/api/pago/:id', async (req, res, next) => {
+  try {
+    const statement = `UPDATE PAGO SET ESTADO_ID=${req.body.ESTADO_ID} WHERE id=${req.body.id}`;
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    res.status(400).send({message: err.message});
   }
   next();
 });
