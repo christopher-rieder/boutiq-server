@@ -139,7 +139,7 @@ app.get('/api/articulo/id/:id', (req, res, next) => {
 });
 
 // 'GET' MIDDLEWARE HANDLER
-app.use(async (req, res, next) => {
+app.use(async (req, res) => {
   if (res.selectQuery && req.method === 'GET') {
     LOGGER('DBQUERY: ', res.selectQuery);
     try {
@@ -150,7 +150,6 @@ app.use(async (req, res, next) => {
       res.status(400).json({message: err.message});
     }
   }
-  next();
 });
 
 // complex get queries
