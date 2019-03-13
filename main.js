@@ -453,8 +453,6 @@ app.post('/api/itemSe%C3%B1a', async (req, res, next) => {
   try {
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
-    await db.run(updateStockStatement(req.body.ARTICULO_ID, req.body.CANTIDAD, false));
-
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
