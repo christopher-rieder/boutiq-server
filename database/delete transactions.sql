@@ -1,0 +1,10 @@
+delete from ITEM_COMPRA;
+delete from ITEM_FACTURA;
+DELETE from ITEM_MISC;
+DELETE from ITEM_RETIRO;
+DELETE from ITEM_SEÑA;
+delete from pago;
+delete from  COMPRA;
+delete from  SEÑA;
+delete from  RETIRO;
+DELETE from FACTURA;

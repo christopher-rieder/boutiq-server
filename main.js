@@ -112,6 +112,11 @@ app.get('/api/se%C3%B1a/last', (req, res, next) => {
   next();
 });
 
+app.get('/api/retiro/last', (req, res, next) => {
+  res.selectQuery = `SELECT MAX(NUMERO_RETIRO) AS lastId FROM RETIRO`;
+  next();
+});
+
 app.get('/api/turno/actual', (req, res, next) => {
   res.selectQuery = `SELECT * FROM TURNO WHERE id=(SELECT MAX(id) FROM TURNO)`;
   next();
@@ -312,6 +317,121 @@ app.get('/api/compra/all', async (req, res, next) => {
           FECHA_HORA,
           PROVEEDOR: {PROVEEDOR_ID, NOMBRE: PROVEEDOR},
           OBSERVACIONES,
+          ITEMS: []
+        });
+        index2 = resultArray.length - 1;
+      }
+      resultArray[index2].ITEMS.push({
+        CODIGO,
+        DESCRIPCION,
+        CANTIDAD
+      });
+    });
+    res.status(200).json(resultArray);
+  } catch (err) {
+    console.log(err);
+    res.status(400).json({message: err.message});
+  }
+  next();
+});
+
+app.get('/api/se%C3%B1a/all', async (req, res, next) => {
+  if (req.params.id === 'last') return; // ignore /api/compra/last, handled befor
+
+  const selectQuery = `
+  SELECT SEÑA.NUMERO_SEÑA, SEÑA.FECHA_HORA, SEÑA.OBSERVACIONES, SEÑA.MONTO,
+         CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
+         VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR,
+         ARTICULO.CODIGO, ARTICULO.DESCRIPCION, ARTICULO.PRECIO_LISTA,
+         ITEM_SEÑA.CANTIDAD, ITEM_SEÑA.PRECIO_UNITARIO AS PRECIO_UNITARIO_SEÑA,
+         ESTADO_PAGO.id AS ESTADO_ID, ESTADO_PAGO.NOMBRE AS ESTADO
+  FROM SEÑA
+  INNER JOIN ITEM_SEÑA
+    ON SEÑA.id = ITEM_SEÑA.SEÑA_ID
+  INNER JOIN ARTICULO
+    ON ITEM_SEÑA.ARTICULO_ID = ARTICULO.id
+  INNER JOIN CLIENTE
+    ON SEÑA.CLIENTE_ID = CLIENTE.id
+  INNER JOIN TURNO
+    ON SEÑA.TURNO_ID = TURNO.id
+  INNER JOIN ESTADO_PAGO
+    ON SEÑA.ESTADO_ID = ESTADO_PAGO.id
+  INNER JOIN VENDEDOR
+    ON TURNO.VENDEDOR_ID = VENDEDOR.id
+  ${isNaN(req.params.id) ? '' : 'WHERE RETIRO.id=' + parseInt(req.params.id)}
+  `;
+
+  try {
+    const results = await db.all(selectQuery);
+    const resultArray = [];
+    results.forEach((item, index) => {
+      const {NUMERO_SEÑA, FECHA_HORA, MONTO, OBSERVACIONES, CLIENTE_ID, CLIENTE, VENDEDOR_ID, VENDEDOR,
+        ESTADO_ID, ESTADO, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO_SEÑA, PRECIO_LISTA} = item;
+
+      let index2 = resultArray.findIndex(item2 => NUMERO_SEÑA === item2.NUMERO_SEÑA);
+      if (index2 === -1) {
+        resultArray.push({
+          NUMERO_SEÑA,
+          FECHA_HORA,
+          VENDEDOR: {id: VENDEDOR_ID, NOMBRE: VENDEDOR},
+          CLIENTE: {id: CLIENTE_ID, NOMBRE: CLIENTE},
+          ESTADO: {id: ESTADO_ID, NOMBRE: ESTADO},
+          OBSERVACIONES,
+          MONTO,
+          ITEMS: []
+        });
+        index2 = resultArray.length - 1;
+      }
+      resultArray[index2].ITEMS.push({
+        CODIGO,
+        DESCRIPCION,
+        CANTIDAD,
+        PRECIO_LISTA,
+        PRECIO_UNITARIO_SEÑA
+      });
+    });
+    res.status(200).json(resultArray);
+  } catch (err) {
+    console.log(err);
+    res.status(400).json({message: err.message});
+  }
+  next();
+});
+
+app.get('/api/retiro/all', async (req, res, next) => {
+  if (req.params.id === 'last') return; // ignore /api/seña/last, handled befor
+
+  const selectQuery = `
+  SELECT RETIRO.NUMERO_RETIRO, RETIRO.FECHA_HORA, RETIRO.OBSERVACIONES,
+         ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
+         VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR,
+         ITEM_RETIRO.CANTIDAD
+  FROM RETIRO
+  INNER JOIN ITEM_RETIRO
+    ON RETIRO.id = ITEM_RETIRO.RETIRO_ID
+  INNER JOIN ARTICULO
+    ON ITEM_RETIRO.ARTICULO_ID = ARTICULO.id
+  INNER JOIN TURNO
+    ON RETIRO.TURNO_ID=TURNO.id
+  INNER JOIN VENDEDOR
+    ON TURNO.VENDEDOR_ID=VENDEDOR.id
+  ${isNaN(req.params.id) ? '' : 'WHERE RETIRO.id=' + parseInt(req.params.id)}
+  `;
+
+  try {
+    const results = await db.all(selectQuery);
+    const resultArray = [];
+    results.forEach((item, index) => {
+      const {NUMERO_RETIRO, FECHA_HORA, OBSERVACIONES, VENDEDOR_ID, VENDEDOR,
+        CODIGO, DESCRIPCION, CANTIDAD} = item;
+
+      let index2 = resultArray.findIndex(item2 => NUMERO_RETIRO === item2.NUMERO_RETIRO);
+      if (index2 === -1) {
+        resultArray.push({
+          NUMERO_RETIRO,
+          FECHA_HORA,
+          OBSERVACIONES,
+          VENDEDOR: {id: VENDEDOR_ID, NOMBRE: VENDEDOR},
           ITEMS: []
         });
         index2 = resultArray.length - 1;
