@@ -57,6 +57,29 @@ app.use(function (req, res, next) {
   next();
 });
 
+function parseColumns (body, table) {
+  const cols = Object.keys(body).filter(e => e !== 'id');
+  const colValuesInsert = cols.map(col => body[col]);
+  const insertStatement = `INSERT INTO ${table} (${cols}) VALUES (${colValuesInsert})`;
+
+  const colValuesUpdate = cols.map(col => `${col}=${body[col]}`);
+  const updateStatement = `UPDATE ${table} SET ${colValuesUpdate} WHERE ID = ${body.id}`;
+
+  if (isNaN(body.id)) { // NEW ITEM
+    return insertStatement;
+  } else {
+    return updateStatement;
+  }
+}
+
+function updateStockStatement (id, cant, suma) {
+  return `
+    UPDATE ARTICULO
+    SET STOCK=(SELECT STOCK FROM ARTICULO WHERE ID=${id})
+    ${suma ? '+' : '-'}
+    ${cant} WHERE ID=${id}`;
+}
+
 /* SIMPLE GET FOR CRUD TABLES */
 const crudTables = ['cliente', 'vendedor', 'proveedor'];
 const crudEndpoints = crudTables.map(tabla => '/api/' + tabla);
@@ -139,7 +162,7 @@ app.get('/api/articulo/id/:id', (req, res, next) => {
 });
 
 // 'GET' MIDDLEWARE HANDLER
-app.use(async (req, res) => {
+app.use(async (req, res, next) => {
   if (res.selectQuery && req.method === 'GET') {
     LOGGER('DBQUERY: ', res.selectQuery);
     try {
@@ -150,10 +173,12 @@ app.use(async (req, res) => {
       res.status(400).json({message: err.message});
     }
   }
+  next();
 });
 
 // complex get queries
 app.get('/api/factura/:id', async (req, res, next) => {
+  if (req.params.id === 'last') return; // ignore /api/factura/last, handled befor
   const selectQuery = `
   SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
         ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
@@ -191,6 +216,7 @@ app.get('/api/factura/:id', async (req, res, next) => {
     ON TURNO.VENDEDOR_ID = VENDEDOR.id
   WHERE FACTURA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND FACTURA.id=' + parseInt(req.params.id)}
   `;
+
   try {
     const results = await db.all(selectQuery);
     const pagos = await db.all(`
@@ -255,6 +281,8 @@ app.get('/api/factura/:id', async (req, res, next) => {
 });
 
 app.get('/api/compra/all', async (req, res, next) => {
+  if (req.params.id === 'last') return; // ignore /api/compra/last, handled befor
+
   const selectQuery = `
   SELECT COMPRA.NUMERO_COMPRA, COMPRA.FECHA_HORA, COMPRA.OBSERVACIONES,
          PROVEEDOR.id AS PROVEEDOR_ID, PROVEEDOR.NOMBRE AS PROVEEDOR,
@@ -303,20 +331,8 @@ app.get('/api/compra/all', async (req, res, next) => {
 });
 
 app.post('/api/crud/:table', async (req, res, next) => {
-  let statement;
-  let cols = Object.keys(req.body).filter(e => e !== 'id');
-
-  if (isNaN(req.body.id)) { // NEW ITEM
-    let colValues = cols.map(col => req.body[col]);
-    statement = `INSERT INTO ${req.params.table} (${cols}) VALUES (${colValues})`;
-    console.log(statement);
-    LOGGER('INSERT: ', statement);
-  } else { // UPDATE EXISTING ITEM
-    let colValues = cols.map(col => `${col}=${req.body[col]}`);
-    statement = `UPDATE ${req.params.table} SET ${colValues} WHERE ID = ${req.body.id}`;
-    console.log(statement);
-    LOGGER('UPDATE: ', statement);
-  }
+  const statement = parseColumns(req.body, req.params.table);
+  console.log(statement);
   try {
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID || req.body.id;
@@ -330,9 +346,9 @@ app.post('/api/crud/:table', async (req, res, next) => {
 });
 
 app.post('/api/factura', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'FACTURA');
+  console.log(statement);
   try {
-    const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID, OBSERVACIONES)
-    VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID},${req.body.OBSERVACIONES})`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
@@ -344,14 +360,12 @@ app.post('/api/factura', async (req, res, next) => {
 });
 
 app.post('/api/itemFactura', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'ITEM_FACTURA');
+  console.log(statement);
   try {
-    const statement = `INSERT INTO ITEM_FACTURA (FACTURA_ID, CANTIDAD, PRECIO_UNITARIO, DESCUENTO, ARTICULO_ID)
-      VALUES (${req.body.FACTURA_ID},${req.body.CANTIDAD},${req.body.PRECIO_UNITARIO},${req.body.DESCUENTO},${req.body.ARTICULO_ID})`;
-    console.log(statement);
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
-    const updateStock = `UPDATE ARTICULO SET STOCK=(SELECT STOCK FROM ARTICULO WHERE ID=${req.body.ARTICULO_ID})-${req.body.CANTIDAD} WHERE ID=${req.body.ARTICULO_ID}`;
-    const dbResponse2 = await db.run(updateStock);
+    await db.run(updateStockStatement(req.body.ARTICULO_ID, req.body.CANTIDAD, false));
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
@@ -361,9 +375,9 @@ app.post('/api/itemFactura', async (req, res, next) => {
 });
 
 app.post('/api/compra', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'COMPRA');
+  console.log(statement);
   try {
-    const statement = `INSERT INTO COMPRA (NUMERO_COMPRA, FECHA_HORA, PROVEEDOR_ID, OBSERVACIONES, TURNO_ID)
-    VALUES (${req.body.NUMERO_COMPRA},${req.body.FECHA_HORA},${req.body.PROVEEDOR_ID},${req.body.OBSERVACIONES},${req.body.TURNO_ID})`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
@@ -376,15 +390,12 @@ app.post('/api/compra', async (req, res, next) => {
 });
 
 app.post('/api/itemCompra', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'ITEM_COMPRA');
+  console.log(statement);
   try {
-    const statement = `INSERT INTO ITEM_COMPRA (COMPRA_ID, CANTIDAD, ARTICULO_ID)
-      VALUES (${req.body.COMPRA_ID},${req.body.CANTIDAD},${req.body.ARTICULO_ID})`;
-    console.log(statement);
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
-    const updateStock = `UPDATE ARTICULO SET STOCK=(SELECT STOCK FROM ARTICULO WHERE ID=${req.body.ARTICULO_ID})+${req.body.CANTIDAD} WHERE ID=${req.body.ARTICULO_ID}`;
-    const dbResponse2 = await db.run(updateStock);
-    console.log(dbResponse2.stmt);
+    await db.run(updateStockStatement(req.body.ARTICULO_ID, req.body.CANTIDAD, true));
 
     res.status(201).send({ lastId });
   } catch (err) {
@@ -413,6 +424,68 @@ app.post('/api/pago/:id', async (req, res, next) => {
     const statement = `UPDATE PAGO SET ESTADO_ID=${req.body.ESTADO_ID} WHERE id=${req.body.id}`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    res.status(400).send({message: err.message});
+  }
+  next();
+});
+
+app.post('/api/se%C3%B1a', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'SEÑA');
+  console.log(statement);
+  try {
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    next();
+    res.status(400).send({message: err.message});
+  }
+  next();
+});
+
+app.post('/api/itemSe%C3%B1a', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'ITEM_SEÑA');
+  console.log(statement);
+  try {
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+    await db.run(updateStockStatement(req.body.ARTICULO_ID, req.body.CANTIDAD, false));
+
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    res.status(400).send({message: err.message});
+  }
+  next();
+});
+
+app.post('/api/retiro', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'RETIRO');
+  console.log(statement);
+  try {
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    next();
+    res.status(400).send({message: err.message});
+  }
+  next();
+});
+
+app.post('/api/itemRetiro', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'ITEM_RETIRO');
+  console.log(statement);
+  try {
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+    await db.run(updateStockStatement(req.body.ARTICULO_ID, req.body.CANTIDAD, false));
+
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
