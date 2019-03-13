@@ -6,10 +6,6 @@ const app = express();
 app.use(compression());
 app.use(express.json());
 
-var multer = require('multer'); // v1.0.5
-var upload = multer(); // for parsing multipart/form-data
-app.use(upload.none());
-
 // LOGGER SET UP
 var fs = require('fs');
 var util = require('util');
@@ -26,8 +22,6 @@ console.error = console.log;
 function LOGGER (...messages) {
   console.log(...messages);
 }
-
-const articuloColumns = ['CODIGO', 'DESCRIPCION', 'PRECIO_LISTA', 'PRECIO_CONTADO', 'PRECIO_COSTO', 'STOCK', 'RUBRO_ID', 'MARCA_ID', 'DESCUENTO'];
 
 const db = require('sqlite');
 const Promise = require('bluebird');
@@ -60,8 +54,6 @@ app.use(function (req, res, next) {
   LOGGER('DATETIME', new Date().toLocaleString());
   LOGGER('URL:     ', req.url);
   LOGGER('METHOD:  ', req.method);
-  LOGGER(req.body);
-
   next();
 });
 
@@ -103,21 +95,14 @@ app.get('/api/turno/actual', (req, res, next) => {
 });
 
 app.get('/api/rawTables/:tabla', (req, res, next) => {
-  if (req.params.tabla === 'full_articulos') {
-    console.log('fetching articulos');
-    console.log('=============================================');
-    console.log('=============================================');
-    console.log('=============================================');
-    console.log('=============================================');
-    console.log('=============================================');
-  }
   res.selectQuery = `SELECT * FROM ${req.params.tabla}`;
   next();
 });
 
 app.get('/api/pago/pendientes', (req, res, next) => {
   res.selectQuery = `
-  SELECT PAGO.*, FACTURA.FECHA_HORA, ESTADO_PAGO.NOMBRE AS ESTADO, FACTURA.NUMERO_FACTURA, TIPO_PAGO.NOMBRE AS TIPO_PAGO
+  SELECT PAGO.*, ESTADO_PAGO.NOMBRE AS ESTADO, TIPO_PAGO.NOMBRE AS TIPO_PAGO,
+         FACTURA.FECHA_HORA, FACTURA.NUMERO_FACTURA
   FROM PAGO
   INNER JOIN FACTURA
     ON PAGO.FACTURA_ID = FACTURA.id
@@ -159,14 +144,16 @@ app.use(async (req, res, next) => {
     LOGGER('DBQUERY: ', res.selectQuery);
     try {
       const results = await db.all(res.selectQuery);
-      res.json(results);
+      res.status(200).json(results);
     } catch (err) {
       console.log(err);
+      res.status(400).json({message: err.message});
     }
   }
   next();
 });
 
+// complex get queries
 app.get('/api/factura/:id', async (req, res, next) => {
   const selectQuery = `
   SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
@@ -205,7 +192,6 @@ app.get('/api/factura/:id', async (req, res, next) => {
     ON TURNO.VENDEDOR_ID = VENDEDOR.id
   WHERE FACTURA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND FACTURA.id=' + parseInt(req.params.id)}
   `;
-  LOGGER('DBQUERY: ', selectQuery);
   try {
     const results = await db.all(selectQuery);
     const pagos = await db.all(`
@@ -221,7 +207,8 @@ app.get('/api/factura/:id', async (req, res, next) => {
 
     const resultArray = [];
     results.forEach((item, index) => {
-      const {NUMERO_FACTURA, FECHA_HORA, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO, CLIENTE_ID, CLIENTE, TURNO, VENDEDOR_ID, VENDEDOR, DESCUENTO, OBSERVACIONES, DESCUENTO_ITEM} = item;
+      const {NUMERO_FACTURA, FECHA_HORA, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO, CLIENTE_ID, CLIENTE,
+        TURNO, VENDEDOR_ID, VENDEDOR, DESCUENTO, OBSERVACIONES, DESCUENTO_ITEM} = item;
 
       let index2 = resultArray.findIndex(item2 => NUMERO_FACTURA === item2.NUMERO_FACTURA);
       if (index2 === -1) {
@@ -259,9 +246,10 @@ app.get('/api/factura/:id', async (req, res, next) => {
         });
       }
     });
-    res.json(resultArray);
+    res.status(200).json(resultArray);
   } catch (err) {
     console.log(err);
+    res.status(400).json({message: err.message});
   }
 
   next();
@@ -280,14 +268,15 @@ app.get('/api/compra/all', async (req, res, next) => {
     ON ITEM_COMPRA.ARTICULO_ID = ARTICULO.id
   INNER JOIN PROVEEDOR
     ON COMPRA.PROVEEDOR_ID = PROVEEDOR.id
-  WHERE COMPRA.ANULADA = 0
+  WHERE COMPRA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND COMPRA.id=' + parseInt(req.params.id)}
   `;
-  LOGGER('DBQUERY: ', selectQuery);
+
   try {
     const results = await db.all(selectQuery);
     const resultArray = [];
     results.forEach((item, index) => {
-      const {NUMERO_COMPRA, FECHA_HORA, OBSERVACIONES, PROVEEDOR_ID, PROVEEDOR, CODIGO, DESCRIPCION, CANTIDAD} = item;
+      const {NUMERO_COMPRA, FECHA_HORA, OBSERVACIONES, PROVEEDOR_ID, PROVEEDOR,
+        CODIGO, DESCRIPCION, CANTIDAD} = item;
 
       let index2 = resultArray.findIndex(item2 => NUMERO_COMPRA === item2.NUMERO_COMPRA);
       if (index2 === -1) {
@@ -306,31 +295,10 @@ app.get('/api/compra/all', async (req, res, next) => {
         CANTIDAD
       });
     });
-    res.json(resultArray);
+    res.status(200).json(resultArray);
   } catch (err) {
     console.log(err);
-  }
-  next();
-});
-
-app.post('/api/articulo', async (req, res, next) => {
-  let statement;
-  if (isNaN(req.body.id) || req.body.id === 0) { // NEW ITEM
-    let cols = articuloColumns.map(col => req.body[col]);
-    cols.unshift();
-    statement = `INSERT INTO ARTICULO (${articuloColumns}) VALUES (${cols})`;
-    LOGGER('INSERT: ', statement);
-  } else { // UPDATE EXISTING ITEM
-    let cols = articuloColumns.map(col => `${col}=${req.body[col]}`);
-    statement = `UPDATE ARTICULO SET ${cols} WHERE ID = ${req.body.id}`;
-    LOGGER('UPDATE: ', statement);
-  }
-  try {
-    const dbResponse = await db.run(statement);
-    const lastId = dbResponse.stmt.lastID || req.body.id;
-    res.status(201).send({ lastId });
-  } catch (err) {
-    res.status(400).send({message: err.message});
+    res.status(400).json({message: err.message});
   }
   next();
 });
@@ -363,7 +331,6 @@ app.post('/api/crud/:table', async (req, res, next) => {
 });
 
 app.post('/api/factura', async (req, res, next) => {
-  req.body.ANULADA = !!(req.body.ANULADA); // CHECK FOR BOOLEAN VALUES, ADD AS FALSE IF NOT EXISTANT
   try {
     const statement = `INSERT INTO FACTURA (NUMERO_FACTURA, FECHA_HORA, DESCUENTO, CLIENTE_ID, TURNO_ID, OBSERVACIONES)
     VALUES (${req.body.NUMERO_FACTURA},${req.body.FECHA_HORA},${req.body.DESCUENTO},${req.body.CLIENTE_ID},${req.body.TURNO_ID},${req.body.OBSERVACIONES})`;
@@ -372,7 +339,6 @@ app.post('/api/factura', async (req, res, next) => {
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
-    next();
     res.status(400).send({message: err.message});
   }
   next();
@@ -397,8 +363,8 @@ app.post('/api/itemFactura', async (req, res, next) => {
 
 app.post('/api/compra', async (req, res, next) => {
   try {
-    const statement = `INSERT INTO COMPRA (NUMERO_COMPRA, FECHA_HORA, PROVEEDOR_ID, OBSERVACIONES)
-    VALUES (${req.body.NUMERO_COMPRA},${req.body.FECHA_HORA},${req.body.PROVEEDOR_ID},${req.body.OBSERVACIONES})`;
+    const statement = `INSERT INTO COMPRA (NUMERO_COMPRA, FECHA_HORA, PROVEEDOR_ID, OBSERVACIONES, TURNO_ID)
+    VALUES (${req.body.NUMERO_COMPRA},${req.body.FECHA_HORA},${req.body.PROVEEDOR_ID},${req.body.OBSERVACIONES},${req.body.TURNO_ID})`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
