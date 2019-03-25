@@ -2,6 +2,9 @@
 // Imports
 const compression = require('compression');
 const express = require('express');
+const dateFormat = require('date-fns/format');
+const DATE_FORMAT_STRING = 'YYYY/MM/DD';
+
 const app = express();
 app.use(compression());
 app.use(express.json());
@@ -450,8 +453,58 @@ app.get('/api/retiro/all', async (req, res, next) => {
   next();
 });
 
+app.get('/api/caja/actual', async (req, res, next) => {
+  const currentDate = dateFormat(new Date(), DATE_FORMAT_STRING);
+  console.log('currDate', currentDate);
+  const selectQuery = `
+  SELECT *
+  FROM CAJA
+  WHERE FECHA = '${currentDate}'
+  `;
+
+  try {
+    const results = await db.all(selectQuery);
+    console.log('currsession', results);
+    res.status(200).json(results);
+  } catch (err) {
+    console.log(err);
+    res.status(400).json({message: err.message});
+  }
+  next();
+});
+
 app.post('/api/crud/:table', async (req, res, next) => {
   const statement = parseColumns(req.body, req.params.table);
+  console.log(statement);
+  try {
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID || req.body.id;
+    console.log('lastid', lastId);
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    res.status(400).send({message: err.message});
+  }
+  next();
+});
+
+app.post('/api/caja', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'CAJA');
+  console.log(statement);
+  try {
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID || req.body.id;
+    console.log('lastid', lastId);
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    res.status(400).send({message: err.message});
+  }
+  next();
+});
+
+app.post('/api/turno', async (req, res, next) => {
+  const statement = parseColumns(req.body, 'TURNO');
   console.log(statement);
   try {
     const dbResponse = await db.run(statement);
