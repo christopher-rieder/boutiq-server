@@ -44,7 +44,7 @@ app.use(function (req, res, next) {
   Object.keys(req.body).forEach(key => {
     if (isNaN(req.body[key]) || req.body[key] === '') {
       req.body[key] = '"' + req.body[key] + '"';
-    } else {
+    } else if (req.body[key] !== null) {
       req.body[key] = parseFloat(req.body[key]);
     }
   });
