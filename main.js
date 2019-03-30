@@ -120,11 +120,6 @@ app.get('/api/retiro/last', (req, res, next) => {
   next();
 });
 
-app.get('/api/turno/actual', (req, res, next) => {
-  res.selectQuery = `SELECT * FROM TURNO WHERE id=(SELECT MAX(id) FROM TURNO)`;
-  next();
-});
-
 app.get('/api/rawTables/:tabla', (req, res, next) => {
   res.selectQuery = `SELECT * FROM ${req.params.tabla}`;
   next();
@@ -184,6 +179,31 @@ app.use(async (req, res, next) => {
   next();
 });
 
+app.get('/api/turno/actual', async (req, res, next) => {
+  const currentDate = dateFormat(new Date(), DATE_FORMAT_STRING);
+  const selectQuery = `
+  SELECT *
+  FROM TURNO 
+  WHERE id=(SELECT MAX(id) FROM TURNO)`;
+
+  try {
+    const results = await db.all(selectQuery);
+    const turnoDate = dateFormat(new Date(results[0].fechaHoraInicio), DATE_FORMAT_STRING);
+    if (currentDate !== turnoDate) {
+      res.status(200).json({});
+    }
+    const vendedorId = results[0].vendedorId;
+    delete results[0].vendedorId;
+    const vendedor = await db.all(`SELECT * FROM VENDEDOR WHERE id=${vendedorId}`);
+    results[0].vendedor = vendedor;
+    res.status(200).json(results);
+  } catch (err) {
+    console.log(err);
+    res.status(400).json({message: err.message});
+  }
+  next();
+});
+
 // complex get queries
 app.get('/api/factura/:id', async (req, res, next) => {
   if (req.params.id === 'last') return; // ignore /api/factura/last, handled befor
@@ -204,7 +224,7 @@ app.get('/api/factura/:id', async (req, res, next) => {
   INNER JOIN TURNO
     ON FACTURA.TURNO_ID = TURNO.id
   INNER JOIN VENDEDOR
-    ON TURNO.VENDEDOR_ID = VENDEDOR.id
+    ON TURNO.vendedorId = VENDEDOR.id
   WHERE FACTURA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND FACTURA.id=' + parseInt(req.params.id)}
   UNION
   SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
@@ -221,7 +241,7 @@ app.get('/api/factura/:id', async (req, res, next) => {
   INNER JOIN TURNO
     ON FACTURA.TURNO_ID = TURNO.id
   INNER JOIN VENDEDOR
-    ON TURNO.VENDEDOR_ID = VENDEDOR.id
+    ON TURNO.vendedorId = VENDEDOR.id
   WHERE FACTURA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND FACTURA.id=' + parseInt(req.params.id)}
   `;
 
@@ -360,7 +380,7 @@ app.get('/api/se%C3%B1a/all', async (req, res, next) => {
   INNER JOIN ESTADO_PAGO
     ON SEÑA.ESTADO_ID = ESTADO_PAGO.id
   INNER JOIN VENDEDOR
-    ON TURNO.VENDEDOR_ID = VENDEDOR.id
+    ON TURNO.vendedorId = VENDEDOR.id
   ${isNaN(req.params.id) ? '' : 'WHERE RETIRO.id=' + parseInt(req.params.id)}
   `;
 
@@ -417,7 +437,7 @@ app.get('/api/retiro/all', async (req, res, next) => {
   INNER JOIN TURNO
     ON RETIRO.TURNO_ID=TURNO.id
   INNER JOIN VENDEDOR
-    ON TURNO.VENDEDOR_ID=VENDEDOR.id
+    ON TURNO.vendedorId=VENDEDOR.id
   ${isNaN(req.params.id) ? '' : 'WHERE RETIRO.id=' + parseInt(req.params.id)}
   `;
 
@@ -455,7 +475,6 @@ app.get('/api/retiro/all', async (req, res, next) => {
 
 app.get('/api/caja/actual', async (req, res, next) => {
   const currentDate = dateFormat(new Date(), DATE_FORMAT_STRING);
-  console.log('currDate', currentDate);
   const selectQuery = `
   SELECT *
   FROM CAJA
