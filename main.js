@@ -492,6 +492,40 @@ app.get('/api/caja/actual', async (req, res, next) => {
   next();
 });
 
+app.get('/api/caja/resumen/:id', async (req, res, next) => {
+  const selectQuery = `
+  SELECT * FROM RESUMEN_CAJA WHERE CAJA_ID=${req.params.id}
+  `;
+
+  try {
+    const results = await db.all(selectQuery);
+    res.status(200).json(results);
+  } catch (err) {
+    console.log(err);
+    res.status(400).json({message: err.message});
+  }
+  next();
+});
+
+app.get('/api/turno/resumen/:id', async (req, res, next) => {
+  const itemsQuery = `
+  SELECT DOCUMENTO, DESCRIPCION, CANTIDAD, VALOR
+  FROM RESUMEN_CAJA WHERE TURNO_ID=${req.params.id}
+  `;
+
+  try {
+    const items = await db.all(itemsQuery);
+    const results = {
+      items
+    };
+    res.status(200).json(results);
+  } catch (err) {
+    console.log(err);
+    res.status(400).json({message: err.message});
+  }
+  next();
+});
+
 app.post('/api/crud/:table', async (req, res, next) => {
   const statement = parseColumns(req.body, req.params.table);
   console.log(statement);
