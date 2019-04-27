@@ -149,17 +149,29 @@ app.get('/api/pago/pendientes', (req, res, next) => {
 
 app.get('/api/articulo/codigo/:codigo', (req, res, next) => {
   res.selectQuery = `
-  SELECT *
-  FROM ARTICULO_FULL
+  SELECT ARTICULO.*, 
+         MARCA.id as marcaId, MARCA.nombre as marcaNombre,
+         RUBRO.id as rubroId, RUBRO.nombre as rubroNombre
+  FROM ARTICULO
+  INNER JOIN MARCA
+    ON ARTICULO.marcaId = MARCA.id
+  INNER JOIN RUBRO
+    ON ARTICULO.rubroId = RUBRO.id
   WHERE codigo = '${req.params.codigo}'`;
   next();
 });
 
 app.get('/api/articulo/id/:id', (req, res, next) => {
   res.selectQuery = `
-  SELECT *
-  FROM ARTICULO_FULL
-  WHERE id = '${req.params.id}'`;
+  SELECT ARTICULO.*, 
+         MARCA.id as marcaId, MARCA.nombre as marcaNombre,
+         RUBRO.id as rubroId, RUBRO.nombre as rubroNombre
+  FROM ARTICULO
+  INNER JOIN MARCA
+    ON ARTICULO.marcaId = MARCA.id
+  INNER JOIN RUBRO
+    ON ARTICULO.rubroId = RUBRO.id
+  WHERE ARTICULO.id = '${req.params.id}'`;
   next();
 });
 
