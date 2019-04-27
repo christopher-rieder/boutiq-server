@@ -1,4 +1,11 @@
+
 'use strict';
+// const currentDate = dateFormat(new Date(), DATE_FORMAT_STRING);
+// const turnoDate = dateFormat(new Date(results[0].fechaHoraInicio), DATE_FORMAT_STRING);
+// if (currentDate !== turnoDate) {
+//   res.status(200).json({});
+// }
+
 // Imports
 const compression = require('compression');
 const express = require('express');
@@ -78,9 +85,9 @@ function parseColumns (body, table) {
 function updateStockStatement (id, cant, suma) {
   return `
     UPDATE ARTICULO
-    SET STOCK=(SELECT STOCK FROM ARTICULO WHERE ID=${id})
+    SET stock=(SELECT stock FROM ARTICULO WHERE id=${id})
     ${suma ? '+' : '-'}
-    ${cant} WHERE ID=${id}`;
+    ${cant} WHERE id=${id}`;
 }
 
 /* SIMPLE GET FOR CRUD TABLES */
@@ -101,22 +108,22 @@ app.get(crudEndpointsItems, (req, res, next) => {
 });
 
 app.get('/api/factura/last', (req, res, next) => {
-  res.selectQuery = `SELECT MAX(NUMERO_FACTURA) AS lastId FROM FACTURA`;
+  res.selectQuery = `SELECT MAX(numeroFactura) AS lastId FROM FACTURA`;
   next();
 });
 
 app.get('/api/compra/last', (req, res, next) => {
-  res.selectQuery = `SELECT MAX(NUMERO_COMPRA) AS lastId FROM COMPRA`;
+  res.selectQuery = `SELECT MAX(numeroCompra) AS lastId FROM COMPRA`;
   next();
 });
 
 app.get('/api/se%C3%B1a/last', (req, res, next) => {
-  res.selectQuery = `SELECT MAX(NUMERO_SEÑA) AS lastId FROM SEÑA`;
+  res.selectQuery = `SELECT MAX(numeroSeña) AS lastId FROM SEÑA`;
   next();
 });
 
 app.get('/api/retiro/last', (req, res, next) => {
-  res.selectQuery = `SELECT MAX(NUMERO_RETIRO) AS lastId FROM RETIRO`;
+  res.selectQuery = `SELECT MAX(numeroRetiro) AS lastId FROM RETIRO`;
   next();
 });
 
@@ -127,40 +134,32 @@ app.get('/api/rawTables/:tabla', (req, res, next) => {
 
 app.get('/api/pago/pendientes', (req, res, next) => {
   res.selectQuery = `
-  SELECT PAGO.*, ESTADO_PAGO.NOMBRE AS ESTADO, TIPO_PAGO.NOMBRE AS TIPO_PAGO,
-         FACTURA.FECHA_HORA, FACTURA.NUMERO_FACTURA
+  SELECT PAGO.*, ESTADO_PAGO.nombre AS estado, TIPO_PAGO.nombre AS tipoPago,
+         FACTURA.fechaHora, FACTURA.numeroFactura
   FROM PAGO
   INNER JOIN FACTURA
-    ON PAGO.FACTURA_ID = FACTURA.id
+    ON PAGO.facturaId = FACTURA.id
   INNER JOIN TIPO_PAGO
-    ON PAGO.TIPO_PAGO_ID = TIPO_PAGO.id
+    ON PAGO.tipoPagoId = TIPO_PAGO.id
   INNER JOIN ESTADO_PAGO
-    ON PAGO.ESTADO_ID = ESTADO_PAGO.id
+    ON PAGO.estadoId = ESTADO_PAGO.id
   `;
   next();
 });
 
 app.get('/api/articulo/codigo/:codigo', (req, res, next) => {
   res.selectQuery = `
-  SELECT ARTICULO.*, MARCA.NOMBRE AS MARCA_NOMBRE, RUBRO.NOMBRE AS RUBRO_NOMBRE
-  FROM ARTICULO
-  INNER JOIN MARCA
-    ON ARTICULO.MARCA_ID=MARCA.id
-  INNER JOIN RUBRO
-    ON ARTICULO.RUBRO_ID=RUBRO.id
-  WHERE CODIGO = '${req.params.codigo}'`;
+  SELECT *
+  FROM ARTICULO_FULL
+  WHERE codigo = '${req.params.codigo}'`;
   next();
 });
 
 app.get('/api/articulo/id/:id', (req, res, next) => {
   res.selectQuery = `
-  SELECT ARTICULO.*, MARCA.NOMBRE AS MARCA_NOMBRE, RUBRO.NOMBRE AS RUBRO_NOMBRE
-  FROM ARTICULO
-  INNER JOIN MARCA
-    ON ARTICULO.MARCA_ID=MARCA.id
-  INNER JOIN RUBRO
-    ON ARTICULO.RUBRO_ID=RUBRO.id
-  WHERE ARTICULO.id = '${req.params.id}'`;
+  SELECT *
+  FROM ARTICULO_FULL
+  WHERE id = '${req.params.id}'`;
   next();
 });
 
@@ -179,8 +178,7 @@ app.use(async (req, res, next) => {
   next();
 });
 
-app.get('/api/turno/actual', async (req, res, next) => {
-  const currentDate = dateFormat(new Date(), DATE_FORMAT_STRING);
+app.get('/api/turno/last', async (req, res, next) => {
   const selectQuery = `
   SELECT *
   FROM TURNO 
@@ -188,15 +186,12 @@ app.get('/api/turno/actual', async (req, res, next) => {
 
   try {
     const results = await db.all(selectQuery);
-    const turnoDate = dateFormat(new Date(results[0].fechaHoraInicio), DATE_FORMAT_STRING);
-    if (currentDate !== turnoDate) {
-      res.status(200).json({});
-    }
     const vendedorId = results[0].vendedorId;
     delete results[0].vendedorId;
+    results[0].cerrado = !!(results[0].fechaHoraCierre);
     const vendedor = await db.all(`SELECT * FROM VENDEDOR WHERE id=${vendedorId}`);
-    results[0].vendedor = vendedor;
-    res.status(200).json(results);
+    results[0].vendedor = vendedor[0];
+    res.status(200).json(results[0]);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -204,102 +199,93 @@ app.get('/api/turno/actual', async (req, res, next) => {
   next();
 });
 
-// complex get queries
-app.get('/api/factura/:id', async (req, res, next) => {
-  if (req.params.id === 'last') return; // ignore /api/factura/last, handled befor
-  const selectQuery = `
-  SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
-        ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
-        ITEM_FACTURA.CANTIDAD, ITEM_FACTURA.PRECIO_UNITARIO, ITEM_FACTURA.DESCUENTO AS DESCUENTO_ITEM,
-        CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
-        TURNO.id AS TURNO,
-        VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR
-  FROM ARTICULO
-  INNER JOIN ITEM_FACTURA
-    ON ARTICULO.id = ITEM_FACTURA.ARTICULO_ID
-  INNER JOIN FACTURA
-    ON ITEM_FACTURA.FACTURA_ID = FACTURA.id
-  INNER JOIN CLIENTE
-    ON FACTURA.CLIENTE_ID = CLIENTE.id
-  INNER JOIN TURNO
-    ON FACTURA.TURNO_ID = TURNO.id
-  INNER JOIN VENDEDOR
-    ON TURNO.vendedorId = VENDEDOR.id
-  WHERE FACTURA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND FACTURA.id=' + parseInt(req.params.id)}
-  UNION
-  SELECT FACTURA.NUMERO_FACTURA, FACTURA.FECHA_HORA, FACTURA.DESCUENTO, FACTURA.OBSERVACIONES,
-    "MISCELANEA", ITEM_MISC.DESCRIPCION,
-    1, ITEM_MISC.PRECIO, 0 AS DESCUENTO_ITEM,
-    CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
-    TURNO.id AS TURNO,
-    VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR
+// // complex get queries
+app.get('/api/factura/all', async (req, res, next) => {
+  if (req.params.id === 'last') return; // ignore /api/factura/last, handled before
+
+  const facturasQuery = `
+  SELECT numeroFactura, fechaHora, CLIENTE.nombre as cliente, turnoId, VENDEDOR.nombre, descuento, anulada, observaciones
   FROM FACTURA
-  INNER JOIN ITEM_MISC
-    ON FACTURA.id = ITEM_MISC.FACTURA_ID
   INNER JOIN CLIENTE
-    ON FACTURA.CLIENTE_ID = CLIENTE.id
+    ON CLIENTE.id = FACTURA.clienteId
   INNER JOIN TURNO
-    ON FACTURA.TURNO_ID = TURNO.id
+    ON FACTURA.turnoId = TURNO.id
   INNER JOIN VENDEDOR
     ON TURNO.vendedorId = VENDEDOR.id
-  WHERE FACTURA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND FACTURA.id=' + parseInt(req.params.id)}
   `;
 
+  const pagosQuery = `
+  SELECT PAGO.monto, FACTURA.numeroFactura, ESTADO_PAGO.nombre AS estado, FACTURA.numeroFactura, TIPO_PAGO.nombre AS tipoPago
+  FROM PAGO
+  INNER JOIN FACTURA
+    ON PAGO.facturaId = FACTURA.id
+  INNER JOIN TIPO_PAGO
+    ON PAGO.tipoPagoId = TIPO_PAGO.id
+  INNER JOIN ESTADO_PAGO
+    ON PAGO.estadoId = ESTADO_PAGO.id
+  `;
+
+  const itemsQuery = `
+  SELECT  FACTURA.numeroFactura, ARTICULO.codigo, ARTICULO.descripcion,
+          ITEM_FACTURA.cantidad, ITEM_FACTURA.precioUnitario, ITEM_FACTURA.descuento AS descuentoItem
+  FROM ARTICULO
+  INNER JOIN ITEM_FACTURA
+    ON ARTICULO.id = ITEM_FACTURA.articuloId
+  INNER JOIN FACTURA
+    ON ITEM_FACTURA.facturaId = FACTURA.id
+  WHERE FACTURA.anulada = 0
+  
+  UNION
+  
+  SELECT  FACTURA.numeroFactura, "MISCELANEA" as codigo, ITEM_MISC.descripcion,
+          1 as cantidad, ITEM_MISC.precio as precioUnitario, 0 AS descuentoItem
+  FROM FACTURA
+  INNER JOIN ITEM_MISC
+    ON FACTURA.id = ITEM_MISC.facturaId
+  WHERE FACTURA.ANULADA = 0
+`;
+
   try {
-    const results = await db.all(selectQuery);
-    const pagos = await db.all(`
-    SELECT PAGO.*, ESTADO_PAGO.NOMBRE AS ESTADO, FACTURA.NUMERO_FACTURA, TIPO_PAGO.NOMBRE AS TIPO_PAGO
-    FROM PAGO
-    INNER JOIN FACTURA
-      ON PAGO.FACTURA_ID = FACTURA.id
-    INNER JOIN TIPO_PAGO
-      ON PAGO.TIPO_PAGO_ID = TIPO_PAGO.id
-    INNER JOIN ESTADO_PAGO
-      ON PAGO.ESTADO_ID = ESTADO_PAGO.id
-    `);
-
-    const resultArray = [];
-    results.forEach((item, index) => {
-      const {NUMERO_FACTURA, FECHA_HORA, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO, CLIENTE_ID, CLIENTE,
-        TURNO, VENDEDOR_ID, VENDEDOR, DESCUENTO, OBSERVACIONES, DESCUENTO_ITEM} = item;
-
-      let index2 = resultArray.findIndex(item2 => NUMERO_FACTURA === item2.NUMERO_FACTURA);
-      if (index2 === -1) {
-        resultArray.push({
-          NUMERO_FACTURA,
-          FECHA_HORA,
-          CLIENTE: {CLIENTE_ID, NOMBRE: CLIENTE},
-          VENDEDOR: {VENDEDOR_ID, NOMBRE: VENDEDOR},
-          TURNO,
-          DESCUENTO,
-          OBSERVACIONES,
-          ITEMS: [],
-          PAGOS: []
-        });
-        index2 = resultArray.length - 1;
+    const facturas = await db.all(facturasQuery);
+    const pagos = await db.all(pagosQuery);
+    const items = await db.all(itemsQuery);
+    const data = [];
+    for (let i = 0; i < facturas.length; i++) {
+      const numeroFactura = facturas[i].numeroFactura;
+      data[i] = {};
+      data[i].factura = facturas[i];
+      data[i].pagos = pagos.filter(pago => pago.numeroFactura === numeroFactura);
+      data[i].items = items.filter(item => item.numeroFactura === numeroFactura);
+      data[i].pagos.forEach(pago => delete pago.numeroFactura);
+      data[i].items.forEach(item => delete item.numeroFactura);
+    }
+    const headerColumns = [
+      {
+        Header: 'NRO',
+        id: 'numeroFactura',
+        width: 60,
+        type: 'NUMBER'
+      },
+      {
+        Header: 'FECHA',
+        id: 'fechaHora',
+        width: 200,
+        type: 'DATE'
+      },
+      {
+        Header: 'CLIENTE',
+        id: 'cliente',
+        width: 200,
+        type: 'text'
+      },
+      {
+        Header: 'VENDEDOR',
+        id: 'vendedor',
+        width: 200,
+        type: 'text'
       }
-      resultArray[index2].ITEMS.push({
-        CODIGO,
-        DESCRIPCION,
-        CANTIDAD,
-        PRECIO_UNITARIO,
-        PRECIO_TOTAL: PRECIO_UNITARIO * CANTIDAD,
-        DESCUENTO_ITEM
-      });
-    });
-    pagos.forEach(pago => {
-      const factura = resultArray.find(f => f.NUMERO_FACTURA === pago.NUMERO_FACTURA);
-      if (factura) {
-        factura.PAGOS.push({
-          id: pago.id,
-          MONTO: pago.MONTO,
-          NUMERO_FACTURA: pago.FACTURA_ID,
-          ESTADO: {id: pago.ESTADO_ID, NOMBRE: pago.ESTADO},
-          TIPO_PAGO: {id: pago.TIPO_PAGO_ID, NOMBRE: pago.TIPO_PAGO}
-        });
-      }
-    });
-    res.status(200).json(resultArray);
+    ];
+    res.status(200).json({headerColumns, data});
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -311,46 +297,59 @@ app.get('/api/factura/:id', async (req, res, next) => {
 app.get('/api/compra/all', async (req, res, next) => {
   if (req.params.id === 'last') return; // ignore /api/compra/last, handled befor
 
-  const selectQuery = `
-  SELECT COMPRA.NUMERO_COMPRA, COMPRA.FECHA_HORA, COMPRA.OBSERVACIONES,
-         PROVEEDOR.id AS PROVEEDOR_ID, PROVEEDOR.NOMBRE AS PROVEEDOR,
-         ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
-         ITEM_COMPRA.CANTIDAD
+  const comprasQuery = `
+  SELECT COMPRA.numeroCompra, COMPRA.fechaHora, COMPRA.observaciones,
+  PROVEEDOR.nombre AS proveedor
+  FROM COMPRA
+  INNER JOIN PROVEEDOR
+    ON COMPRA.proveedorId = PROVEEDOR.id
+  WHERE COMPRA.anulada = 0
+  `;
+
+  const itemsQuery = `
+  SELECT COMPRA.numeroCompra,
+         ARTICULO.codigo, ARTICULO.descripcion,
+         ITEM_COMPRA.cantidad
   FROM COMPRA
   INNER JOIN ITEM_COMPRA
-    ON COMPRA.id = ITEM_COMPRA.COMPRA_ID
+    ON COMPRA.id = ITEM_COMPRA.compraId
   INNER JOIN ARTICULO
-    ON ITEM_COMPRA.ARTICULO_ID = ARTICULO.id
-  INNER JOIN PROVEEDOR
-    ON COMPRA.PROVEEDOR_ID = PROVEEDOR.id
-  WHERE COMPRA.ANULADA = 0 ${isNaN(req.params.id) ? '' : 'AND COMPRA.id=' + parseInt(req.params.id)}
+    ON ITEM_COMPRA.articuloId = ARTICULO.id
+  WHERE COMPRA.anulada = 0
   `;
 
   try {
-    const results = await db.all(selectQuery);
-    const resultArray = [];
-    results.forEach((item, index) => {
-      const {NUMERO_COMPRA, FECHA_HORA, OBSERVACIONES, PROVEEDOR_ID, PROVEEDOR,
-        CODIGO, DESCRIPCION, CANTIDAD} = item;
-
-      let index2 = resultArray.findIndex(item2 => NUMERO_COMPRA === item2.NUMERO_COMPRA);
-      if (index2 === -1) {
-        resultArray.push({
-          NUMERO_COMPRA,
-          FECHA_HORA,
-          PROVEEDOR: {PROVEEDOR_ID, NOMBRE: PROVEEDOR},
-          OBSERVACIONES,
-          ITEMS: []
-        });
-        index2 = resultArray.length - 1;
+    const compras = await db.all(comprasQuery);
+    const items = await db.all(itemsQuery);
+    const data = [];
+    for (let i = 0; i < compras.length; i++) {
+      const numeroCompra = compras[i].numeroCompra;
+      data[i] = {};
+      data[i].compra = compras[i];
+      data[i].items = items.filter(item => item.numeroCompra === numeroCompra);
+      data[i].items.forEach(item => delete item.numeroCompra);
+    }
+    const headerColumns = [
+      {
+        Header: 'NRO',
+        id: 'numeroCompra',
+        width: 60,
+        type: 'NUMBER'
+      },
+      {
+        Header: 'FECHA',
+        id: 'fechaHora',
+        width: 200,
+        type: 'DATE'
+      },
+      {
+        Header: 'PROVEEDOR',
+        id: 'proveedor',
+        width: 200,
+        type: 'text'
       }
-      resultArray[index2].ITEMS.push({
-        CODIGO,
-        DESCRIPCION,
-        CANTIDAD
-      });
-    });
-    res.status(200).json(resultArray);
+    ];
+    res.status(200).json({headerColumns, data});
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -361,59 +360,84 @@ app.get('/api/compra/all', async (req, res, next) => {
 app.get('/api/se%C3%B1a/all', async (req, res, next) => {
   if (req.params.id === 'last') return; // ignore /api/compra/last, handled befor
 
-  const selectQuery = `
-  SELECT SEÑA.NUMERO_SEÑA, SEÑA.FECHA_HORA, SEÑA.OBSERVACIONES, SEÑA.MONTO,
-         CLIENTE.id AS CLIENTE_ID, CLIENTE.NOMBRE AS CLIENTE,
-         VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR,
-         ARTICULO.CODIGO, ARTICULO.DESCRIPCION, ARTICULO.PRECIO_LISTA,
-         ITEM_SEÑA.CANTIDAD, ITEM_SEÑA.PRECIO_UNITARIO AS PRECIO_UNITARIO_SEÑA,
-         ESTADO_PAGO.id AS ESTADO_ID, ESTADO_PAGO.NOMBRE AS ESTADO
+  const señasQuery = `
+  SELECT  SEÑA.numeroSeña, SEÑA.monto, SEÑA.fechaHora, SEÑA.observaciones,
+          ESTADO_PAGO.nombre as estado,
+          CLIENTE.nombre as cliente,
+          VENDEDOR.nombre as vendedor
   FROM SEÑA
-  INNER JOIN ITEM_SEÑA
-    ON SEÑA.id = ITEM_SEÑA.SEÑA_ID
-  INNER JOIN ARTICULO
-    ON ITEM_SEÑA.ARTICULO_ID = ARTICULO.id
-  INNER JOIN CLIENTE
-    ON SEÑA.CLIENTE_ID = CLIENTE.id
-  INNER JOIN TURNO
-    ON SEÑA.TURNO_ID = TURNO.id
   INNER JOIN ESTADO_PAGO
-    ON SEÑA.ESTADO_ID = ESTADO_PAGO.id
+    ON SEÑA.estadoId = ESTADO_PAGO.id
+  INNER JOIN CLIENTE
+    ON SEÑA.clienteId = CLIENTE.id
+  INNER JOIN TURNO
+    ON SEÑA.turnoId
   INNER JOIN VENDEDOR
     ON TURNO.vendedorId = VENDEDOR.id
-  ${isNaN(req.params.id) ? '' : 'WHERE RETIRO.id=' + parseInt(req.params.id)}
+  WHERE SEÑA.anulada = 0
+  `;
+
+  // const pagosQuery = ``;
+
+  const itemsQuery = `
+  SELECT SEÑA.numeroSeña,
+         ARTICULO.codigo, ARTICULO.descripcion,
+         ITEM_SEÑA.cantidad, ITEM_SEÑA.precioUnitario
+  FROM SEÑA
+  INNER JOIN ITEM_SEÑA
+    ON SEÑA.id = ITEM_SEÑA.señaId
+  INNER JOIN ARTICULO
+    ON ITEM_SEÑA.articuloId = ARTICULO.id
+  WHERE SEÑA.anulada = 0
   `;
 
   try {
-    const results = await db.all(selectQuery);
-    const resultArray = [];
-    results.forEach((item, index) => {
-      const {NUMERO_SEÑA, FECHA_HORA, MONTO, OBSERVACIONES, CLIENTE_ID, CLIENTE, VENDEDOR_ID, VENDEDOR,
-        ESTADO_ID, ESTADO, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_UNITARIO_SEÑA, PRECIO_LISTA} = item;
-
-      let index2 = resultArray.findIndex(item2 => NUMERO_SEÑA === item2.NUMERO_SEÑA);
-      if (index2 === -1) {
-        resultArray.push({
-          NUMERO_SEÑA,
-          FECHA_HORA,
-          VENDEDOR: {id: VENDEDOR_ID, NOMBRE: VENDEDOR},
-          CLIENTE: {id: CLIENTE_ID, NOMBRE: CLIENTE},
-          ESTADO: {id: ESTADO_ID, NOMBRE: ESTADO},
-          OBSERVACIONES,
-          MONTO,
-          ITEMS: []
-        });
-        index2 = resultArray.length - 1;
+    const señas = await db.all(señasQuery);
+    // const pagos = await db.all(pagosQuery);
+    const items = await db.all(itemsQuery);
+    const data = [];
+    for (let i = 0; i < señas.length; i++) {
+      const numeroSeña = señas[i].numeroSeña;
+      data[i] = {};
+      data[i].factura = señas[i];
+      // data[i].pagos = pagos.filter(pago => pago.numeroSeña === numeroSeña);
+      data[i].items = items.filter(item => item.numeroSeña === numeroSeña);
+      // data[i].pagos.forEach(pago => delete pago.numeroSeña);
+      data[i].items.forEach(item => delete item.numeroSeña);
+    }
+    const headerColumns = [
+      {
+        Header: 'NRO',
+        id: 'numeroSeña',
+        width: 60,
+        type: 'NUMBER'
+      },
+      {
+        Header: 'FECHA',
+        id: 'fechaHora',
+        width: 200,
+        type: 'DATE'
+      },
+      {
+        Header: 'CLIENTE',
+        id: 'cliente',
+        width: 200,
+        type: 'text'
+      },
+      {
+        Header: 'VENDEDOR',
+        id: 'vendedor',
+        width: 200,
+        type: 'text'
+      },
+      {
+        Header: 'RESUELTO',
+        id: 'resuelto',
+        width: 60,
+        type: 'BOOLEAN'
       }
-      resultArray[index2].ITEMS.push({
-        CODIGO,
-        DESCRIPCION,
-        CANTIDAD,
-        PRECIO_LISTA,
-        PRECIO_UNITARIO_SEÑA
-      });
-    });
-    res.status(200).json(resultArray);
+    ];
+    res.status(200).json({headerColumns, data});
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -424,48 +448,59 @@ app.get('/api/se%C3%B1a/all', async (req, res, next) => {
 app.get('/api/retiro/all', async (req, res, next) => {
   if (req.params.id === 'last') return; // ignore /api/seña/last, handled befor
 
-  const selectQuery = `
-  SELECT RETIRO.NUMERO_RETIRO, RETIRO.FECHA_HORA, RETIRO.OBSERVACIONES,
-         ARTICULO.CODIGO, ARTICULO.DESCRIPCION,
-         VENDEDOR.id AS VENDEDOR_ID, VENDEDOR.NOMBRE AS VENDEDOR,
-         ITEM_RETIRO.CANTIDAD
+  const retirosQuery = `
+    SELECT numeroRetiro, fechaHora, observaciones,
+           VENDEDOR.nombre as vendedor
+    FROM RETIRO
+    INNER JOIN TURNO
+      ON RETIRO.turnoId = TURNO.id
+    INNER JOIN VENDEDOR
+      ON TURNO.vendedorId = vendedor.id
+  `;
+
+  const itemsQuery = `
+  SELECT RETIRO.numeroRetiro,
+         ARTICULO.codigo, ARTICULO.descripcion,
+         ITEM_RETIRO.cantidad
   FROM RETIRO
   INNER JOIN ITEM_RETIRO
-    ON RETIRO.id = ITEM_RETIRO.RETIRO_ID
+    ON RETIRO.id = ITEM_RETIRO.retiroId
   INNER JOIN ARTICULO
-    ON ITEM_RETIRO.ARTICULO_ID = ARTICULO.id
-  INNER JOIN TURNO
-    ON RETIRO.TURNO_ID=TURNO.id
-  INNER JOIN VENDEDOR
-    ON TURNO.vendedorId=VENDEDOR.id
-  ${isNaN(req.params.id) ? '' : 'WHERE RETIRO.id=' + parseInt(req.params.id)}
+    ON ITEM_RETIRO.articuloId = ARTICULO.id
   `;
 
   try {
-    const results = await db.all(selectQuery);
-    const resultArray = [];
-    results.forEach((item, index) => {
-      const {NUMERO_RETIRO, FECHA_HORA, OBSERVACIONES, VENDEDOR_ID, VENDEDOR,
-        CODIGO, DESCRIPCION, CANTIDAD} = item;
-
-      let index2 = resultArray.findIndex(item2 => NUMERO_RETIRO === item2.NUMERO_RETIRO);
-      if (index2 === -1) {
-        resultArray.push({
-          NUMERO_RETIRO,
-          FECHA_HORA,
-          OBSERVACIONES,
-          VENDEDOR: {id: VENDEDOR_ID, NOMBRE: VENDEDOR},
-          ITEMS: []
-        });
-        index2 = resultArray.length - 1;
+    const retiros = await db.all(retirosQuery);
+    const items = await db.all(itemsQuery);
+    const data = [];
+    for (let i = 0; i < retiros.length; i++) {
+      const numeroRetiro = retiros[i].numeroRetiro;
+      data[i] = {};
+      data[i].retiro = retiros[i];
+      data[i].items = items.filter(item => item.numeroRetiro === numeroRetiro);
+      data[i].items.forEach(item => delete item.numeroRetiro);
+    }
+    const headerColumns = [
+      {
+        Header: 'NRO',
+        id: 'numeroRetiro',
+        width: 60,
+        type: 'NUMBER'
+      },
+      {
+        Header: 'FECHA',
+        id: 'fechaHora',
+        width: 200,
+        type: 'DATE'
+      },
+      {
+        Header: 'VENDEDOR',
+        id: 'vendedor',
+        width: 200,
+        type: 'text'
       }
-      resultArray[index2].ITEMS.push({
-        CODIGO,
-        DESCRIPCION,
-        CANTIDAD
-      });
-    });
-    res.status(200).json(resultArray);
+    ];
+    res.status(200).json({headerColumns, data});
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -478,7 +513,7 @@ app.get('/api/caja/actual', async (req, res, next) => {
   const selectQuery = `
   SELECT *
   FROM CAJA
-  WHERE FECHA = '${currentDate}'
+  WHERE fecha = '${currentDate}'
   `;
 
   try {
@@ -494,7 +529,8 @@ app.get('/api/caja/actual', async (req, res, next) => {
 
 app.get('/api/caja/resumen/:id', async (req, res, next) => {
   const selectQuery = `
-  SELECT * FROM RESUMEN_CAJA WHERE CAJA_ID=${req.params.id}
+  SELECT documento, numero, descripcion, cantidad, valor
+  FROM RESUMEN_CAJA WHERE cajaId=${req.params.id}
   `;
 
   try {
@@ -509,8 +545,8 @@ app.get('/api/caja/resumen/:id', async (req, res, next) => {
 
 app.get('/api/turno/resumen/:id', async (req, res, next) => {
   const itemsQuery = `
-  SELECT DOCUMENTO, DESCRIPCION, CANTIDAD, VALOR
-  FROM RESUMEN_CAJA WHERE TURNO_ID=${req.params.id}
+  SELECT documento, numero, descripcion, cantidad, valor
+  FROM RESUMEN_CAJA WHERE turnoId=${req.params.id}
   `;
 
   try {
@@ -591,7 +627,7 @@ app.post('/api/itemFactura', async (req, res, next) => {
   try {
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
-    await db.run(updateStockStatement(req.body.ARTICULO_ID, req.body.CANTIDAD, false));
+    await db.run(updateStockStatement(req.body.articuloId, req.body.cantidad, false));
     res.status(201).send({ lastId });
   } catch (err) {
     console.log(err);
@@ -621,7 +657,7 @@ app.post('/api/itemCompra', async (req, res, next) => {
   try {
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
-    await db.run(updateStockStatement(req.body.ARTICULO_ID, req.body.CANTIDAD, true));
+    await db.run(updateStockStatement(req.body.articuloId, req.body.cantidad, true));
 
     res.status(201).send({ lastId });
   } catch (err) {
@@ -633,8 +669,8 @@ app.post('/api/itemCompra', async (req, res, next) => {
 
 app.post('/api/pago', async (req, res, next) => {
   try {
-    const statement = `INSERT INTO PAGO (FACTURA_ID, MONTO, TIPO_PAGO_ID, ESTADO_ID)
-      VALUES (${req.body.FACTURA_ID},${req.body.MONTO},${req.body.TIPO_PAGO_ID},${req.body.ESTADO_ID})`;
+    const statement = `INSERT INTO PAGO (facturaId, monto, tipoPagoId, estadoId)
+      VALUES (${req.body.facturaId},${req.body.monto},${req.body.tipoPagoId},${req.body.estadoId})`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
@@ -647,7 +683,7 @@ app.post('/api/pago', async (req, res, next) => {
 
 app.post('/api/pago/:id', async (req, res, next) => {
   try {
-    const statement = `UPDATE PAGO SET ESTADO_ID=${req.body.ESTADO_ID} WHERE id=${req.body.id}`;
+    const statement = `UPDATE PAGO SET estadoId=${req.body.estadoId} WHERE id=${req.body.id}`;
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
     res.status(201).send({ lastId });
@@ -708,7 +744,7 @@ app.post('/api/itemRetiro', async (req, res, next) => {
   try {
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
-    await db.run(updateStockStatement(req.body.ARTICULO_ID, req.body.CANTIDAD, false));
+    await db.run(updateStockStatement(req.body.articuloId, req.body.cantidad, false));
 
     res.status(201).send({ lastId });
   } catch (err) {
