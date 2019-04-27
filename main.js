@@ -203,7 +203,7 @@ app.get('/api/turno/last', async (req, res, next) => {
     results[0].cerrado = !!(results[0].fechaHoraCierre);
     const vendedor = await db.all(`SELECT * FROM VENDEDOR WHERE id=${vendedorId}`);
     results[0].vendedor = vendedor[0];
-    res.status(200).json(results[0]);
+    res.status(200).json(results);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -265,39 +265,13 @@ app.get('/api/factura/all', async (req, res, next) => {
     for (let i = 0; i < facturas.length; i++) {
       const numeroFactura = facturas[i].numeroFactura;
       data[i] = {};
-      data[i].factura = facturas[i];
+      data[i] = facturas[i];
       data[i].pagos = pagos.filter(pago => pago.numeroFactura === numeroFactura);
       data[i].items = items.filter(item => item.numeroFactura === numeroFactura);
       data[i].pagos.forEach(pago => delete pago.numeroFactura);
       data[i].items.forEach(item => delete item.numeroFactura);
     }
-    const headerColumns = [
-      {
-        Header: 'NRO',
-        id: 'numeroFactura',
-        width: 60,
-        type: 'NUMBER'
-      },
-      {
-        Header: 'FECHA',
-        id: 'fechaHora',
-        width: 200,
-        type: 'DATE'
-      },
-      {
-        Header: 'CLIENTE',
-        id: 'cliente',
-        width: 200,
-        type: 'text'
-      },
-      {
-        Header: 'VENDEDOR',
-        id: 'vendedor',
-        width: 200,
-        type: 'text'
-      }
-    ];
-    res.status(200).json({headerColumns, data});
+    res.status(200).json(data);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -337,31 +311,11 @@ app.get('/api/compra/all', async (req, res, next) => {
     for (let i = 0; i < compras.length; i++) {
       const numeroCompra = compras[i].numeroCompra;
       data[i] = {};
-      data[i].compra = compras[i];
+      data[i] = compras[i];
       data[i].items = items.filter(item => item.numeroCompra === numeroCompra);
       data[i].items.forEach(item => delete item.numeroCompra);
     }
-    const headerColumns = [
-      {
-        Header: 'NRO',
-        id: 'numeroCompra',
-        width: 60,
-        type: 'NUMBER'
-      },
-      {
-        Header: 'FECHA',
-        id: 'fechaHora',
-        width: 200,
-        type: 'DATE'
-      },
-      {
-        Header: 'PROVEEDOR',
-        id: 'proveedor',
-        width: 200,
-        type: 'text'
-      }
-    ];
-    res.status(200).json({headerColumns, data});
+    res.status(200).json(data);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -383,7 +337,7 @@ app.get('/api/se%C3%B1a/all', async (req, res, next) => {
   INNER JOIN CLIENTE
     ON SEÑA.clienteId = CLIENTE.id
   INNER JOIN TURNO
-    ON SEÑA.turnoId
+    ON SEÑA.turnoId = TURNO.id
   INNER JOIN VENDEDOR
     ON TURNO.vendedorId = VENDEDOR.id
   WHERE SEÑA.anulada = 0
@@ -405,51 +359,20 @@ app.get('/api/se%C3%B1a/all', async (req, res, next) => {
 
   try {
     const señas = await db.all(señasQuery);
+    console.log(señas);
     // const pagos = await db.all(pagosQuery);
     const items = await db.all(itemsQuery);
     const data = [];
     for (let i = 0; i < señas.length; i++) {
       const numeroSeña = señas[i].numeroSeña;
       data[i] = {};
-      data[i].factura = señas[i];
+      data[i] = señas[i];
       // data[i].pagos = pagos.filter(pago => pago.numeroSeña === numeroSeña);
       data[i].items = items.filter(item => item.numeroSeña === numeroSeña);
       // data[i].pagos.forEach(pago => delete pago.numeroSeña);
       data[i].items.forEach(item => delete item.numeroSeña);
     }
-    const headerColumns = [
-      {
-        Header: 'NRO',
-        id: 'numeroSeña',
-        width: 60,
-        type: 'NUMBER'
-      },
-      {
-        Header: 'FECHA',
-        id: 'fechaHora',
-        width: 200,
-        type: 'DATE'
-      },
-      {
-        Header: 'CLIENTE',
-        id: 'cliente',
-        width: 200,
-        type: 'text'
-      },
-      {
-        Header: 'VENDEDOR',
-        id: 'vendedor',
-        width: 200,
-        type: 'text'
-      },
-      {
-        Header: 'RESUELTO',
-        id: 'resuelto',
-        width: 60,
-        type: 'BOOLEAN'
-      }
-    ];
-    res.status(200).json({headerColumns, data});
+    res.status(200).json(data);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -488,31 +411,11 @@ app.get('/api/retiro/all', async (req, res, next) => {
     for (let i = 0; i < retiros.length; i++) {
       const numeroRetiro = retiros[i].numeroRetiro;
       data[i] = {};
-      data[i].retiro = retiros[i];
+      data[i] = retiros[i];
       data[i].items = items.filter(item => item.numeroRetiro === numeroRetiro);
       data[i].items.forEach(item => delete item.numeroRetiro);
     }
-    const headerColumns = [
-      {
-        Header: 'NRO',
-        id: 'numeroRetiro',
-        width: 60,
-        type: 'NUMBER'
-      },
-      {
-        Header: 'FECHA',
-        id: 'fechaHora',
-        width: 200,
-        type: 'DATE'
-      },
-      {
-        Header: 'VENDEDOR',
-        id: 'vendedor',
-        width: 200,
-        type: 'text'
-      }
-    ];
-    res.status(200).json({headerColumns, data});
+    res.status(200).json(data);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -579,7 +482,7 @@ app.post('/api/crud/:table', async (req, res, next) => {
   console.log(statement);
   try {
     const dbResponse = await db.run(statement);
-    const lastId = dbResponse.stmt.lastID || req.body.id;
+    const lastId = req.body.id || dbResponse.stmt.lastID;
     console.log('lastid', lastId);
     res.status(201).send({ lastId });
   } catch (err) {
