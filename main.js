@@ -212,7 +212,7 @@ app.get('/api/turno/last', async (req, res, next) => {
 });
 
 // // complex get queries
-app.get('/api/factura/all', async (req, res, next) => {
+app.get('/api/factura/:numero', async (req, res, next) => {
   if (req.params.id === 'last') return; // ignore /api/factura/last, handled before
 
   const facturasQuery = `
@@ -224,10 +224,11 @@ app.get('/api/factura/all', async (req, res, next) => {
     ON FACTURA.turnoId = TURNO.id
   INNER JOIN VENDEDOR
     ON TURNO.vendedorId = VENDEDOR.id
+  WHERE numeroFactura = ${req.params.numero}
   `;
 
   const pagosQuery = `
-  SELECT PAGO.monto, FACTURA.numeroFactura, ESTADO_PAGO.nombre AS estado, FACTURA.numeroFactura, TIPO_PAGO.nombre AS tipoPago
+  SELECT PAGO.monto, ESTADO_PAGO.nombre AS estado, FACTURA.numeroFactura, TIPO_PAGO.nombre AS tipoPago
   FROM PAGO
   INNER JOIN FACTURA
     ON PAGO.facturaId = FACTURA.id
@@ -235,10 +236,11 @@ app.get('/api/factura/all', async (req, res, next) => {
     ON PAGO.tipoPagoId = TIPO_PAGO.id
   INNER JOIN ESTADO_PAGO
     ON PAGO.estadoId = ESTADO_PAGO.id
+  WHERE numeroFactura = ${req.params.numero}
   `;
 
   const itemsQuery = `
-  SELECT  FACTURA.numeroFactura, ARTICULO.codigo, ARTICULO.descripcion,
+  SELECT  ARTICULO.codigo, ARTICULO.descripcion,
           ITEM_FACTURA.cantidad, ITEM_FACTURA.precioUnitario, ITEM_FACTURA.descuento AS descuentoItem,
           ITEM_FACTURA.cantidad * ITEM_FACTURA.precioUnitario as precioTotal
   FROM ARTICULO
@@ -246,34 +248,26 @@ app.get('/api/factura/all', async (req, res, next) => {
     ON ARTICULO.id = ITEM_FACTURA.articuloId
   INNER JOIN FACTURA
     ON ITEM_FACTURA.facturaId = FACTURA.id
-  WHERE FACTURA.anulada = 0
+  WHERE numeroFactura = ${req.params.numero}
   
   UNION
   
-  SELECT  FACTURA.numeroFactura, "MISCELANEA" as codigo, ITEM_MISC.descripcion,
+  SELECT  "MISCELANEA" as codigo, ITEM_MISC.descripcion,
           1 as cantidad, ITEM_MISC.precio as precioUnitario, 0 AS descuentoItem,
           ITEM_MISC.precio AS precioTotal
   FROM FACTURA
   INNER JOIN ITEM_MISC
     ON FACTURA.id = ITEM_MISC.facturaId
-  WHERE FACTURA.ANULADA = 0
+  WHERE numeroFactura = ${req.params.numero}
 `;
 
   try {
-    const facturas = await db.all(facturasQuery);
+    const factura = await db.all(facturasQuery);
     const pagos = await db.all(pagosQuery);
     const items = await db.all(itemsQuery);
-    const data = [];
-    for (let i = 0; i < facturas.length; i++) {
-      const numeroFactura = facturas[i].numeroFactura;
-      data[i] = {};
-      data[i] = facturas[i];
-      data[i].pagos = pagos.filter(pago => pago.numeroFactura === numeroFactura);
-      data[i].items = items.filter(item => item.numeroFactura === numeroFactura);
-      data[i].pagos.forEach(pago => delete pago.numeroFactura);
-      data[i].items.forEach(item => delete item.numeroFactura);
-    }
-    res.status(200).json(data);
+    factura[0].pagos = pagos;
+    factura[0].items = items;
+    res.status(200).json(factura);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -282,7 +276,7 @@ app.get('/api/factura/all', async (req, res, next) => {
   next();
 });
 
-app.get('/api/compra/all', async (req, res, next) => {
+app.get('/api/compra/:numero', async (req, res, next) => {
   if (req.params.id === 'last') return; // ignore /api/compra/last, handled befor
 
   const comprasQuery = `
@@ -291,7 +285,7 @@ app.get('/api/compra/all', async (req, res, next) => {
   FROM COMPRA
   INNER JOIN PROVEEDOR
     ON COMPRA.proveedorId = PROVEEDOR.id
-  WHERE COMPRA.anulada = 0
+  WHERE numeroCompra = ${req.params.numero}
   `;
 
   const itemsQuery = `
@@ -303,21 +297,14 @@ app.get('/api/compra/all', async (req, res, next) => {
     ON COMPRA.id = ITEM_COMPRA.compraId
   INNER JOIN ARTICULO
     ON ITEM_COMPRA.articuloId = ARTICULO.id
-  WHERE COMPRA.anulada = 0
+  WHERE numeroCompra = ${req.params.numero}
   `;
 
   try {
     const compras = await db.all(comprasQuery);
     const items = await db.all(itemsQuery);
-    const data = [];
-    for (let i = 0; i < compras.length; i++) {
-      const numeroCompra = compras[i].numeroCompra;
-      data[i] = {};
-      data[i] = compras[i];
-      data[i].items = items.filter(item => item.numeroCompra === numeroCompra);
-      data[i].items.forEach(item => delete item.numeroCompra);
-    }
-    res.status(200).json(data);
+    compras[0].items = items;
+    res.status(200).json(compras);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -325,9 +312,9 @@ app.get('/api/compra/all', async (req, res, next) => {
   next();
 });
 
-app.get('/api/se%C3%B1a/all', async (req, res, next) => {
+app.get('/api/se%C3%B1a/:numero', async (req, res, next) => {
   if (req.params.id === 'last') return; // ignore /api/compra/last, handled befor
-
+  console.log('POSADKSPOJAS');
   const señasQuery = `
   SELECT  SEÑA.numeroSeña, SEÑA.monto, SEÑA.fechaHora, SEÑA.observaciones,
           ESTADO_PAGO.nombre as estado,
@@ -342,7 +329,7 @@ app.get('/api/se%C3%B1a/all', async (req, res, next) => {
     ON SEÑA.turnoId = TURNO.id
   INNER JOIN VENDEDOR
     ON TURNO.vendedorId = VENDEDOR.id
-  WHERE SEÑA.anulada = 0
+  WHERE numeroSeña = ${req.params.numero}
   `;
 
   // const pagosQuery = ``;
@@ -356,25 +343,15 @@ app.get('/api/se%C3%B1a/all', async (req, res, next) => {
     ON SEÑA.id = ITEM_SEÑA.señaId
   INNER JOIN ARTICULO
     ON ITEM_SEÑA.articuloId = ARTICULO.id
-  WHERE SEÑA.anulada = 0
+  WHERE numeroSeña = ${req.params.numero}
   `;
 
   try {
     const señas = await db.all(señasQuery);
-    console.log(señas);
     // const pagos = await db.all(pagosQuery);
     const items = await db.all(itemsQuery);
-    const data = [];
-    for (let i = 0; i < señas.length; i++) {
-      const numeroSeña = señas[i].numeroSeña;
-      data[i] = {};
-      data[i] = señas[i];
-      // data[i].pagos = pagos.filter(pago => pago.numeroSeña === numeroSeña);
-      data[i].items = items.filter(item => item.numeroSeña === numeroSeña);
-      // data[i].pagos.forEach(pago => delete pago.numeroSeña);
-      data[i].items.forEach(item => delete item.numeroSeña);
-    }
-    res.status(200).json(data);
+    señas[0].items = items;
+    res.status(200).json(señas);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -382,7 +359,7 @@ app.get('/api/se%C3%B1a/all', async (req, res, next) => {
   next();
 });
 
-app.get('/api/retiro/all', async (req, res, next) => {
+app.get('/api/retiro/:numero', async (req, res, next) => {
   if (req.params.id === 'last') return; // ignore /api/seña/last, handled befor
 
   const retirosQuery = `
@@ -393,6 +370,7 @@ app.get('/api/retiro/all', async (req, res, next) => {
       ON RETIRO.turnoId = TURNO.id
     INNER JOIN VENDEDOR
       ON TURNO.vendedorId = vendedor.id
+    WHERE numeroRetiro = ${req.params.numero}
   `;
 
   const itemsQuery = `
@@ -404,20 +382,14 @@ app.get('/api/retiro/all', async (req, res, next) => {
     ON RETIRO.id = ITEM_RETIRO.retiroId
   INNER JOIN ARTICULO
     ON ITEM_RETIRO.articuloId = ARTICULO.id
+    WHERE numeroRetiro = ${req.params.numero}
   `;
 
   try {
     const retiros = await db.all(retirosQuery);
     const items = await db.all(itemsQuery);
-    const data = [];
-    for (let i = 0; i < retiros.length; i++) {
-      const numeroRetiro = retiros[i].numeroRetiro;
-      data[i] = {};
-      data[i] = retiros[i];
-      data[i].items = items.filter(item => item.numeroRetiro === numeroRetiro);
-      data[i].items.forEach(item => delete item.numeroRetiro);
-    }
-    res.status(200).json(data);
+    retiros[0].items = items;
+    res.status(200).json(retiros);
   } catch (err) {
     console.log(err);
     res.status(400).json({message: err.message});
@@ -527,6 +499,24 @@ app.post('/api/turno', async (req, res, next) => {
 app.post('/api/factura', async (req, res, next) => {
   const statement = parseColumns(req.body, 'FACTURA');
   console.log(statement);
+  try {
+    const dbResponse = await db.run(statement);
+    const lastId = dbResponse.stmt.lastID;
+    res.status(201).send({ lastId });
+  } catch (err) {
+    console.log(err);
+    res.status(400).send({message: err.message});
+  }
+  next();
+});
+
+app.post('/api/anular/factura/:numero', async (req, res, next) => {
+  const statement = `
+    UPDATE factura
+    SET ANULADA = 1
+    WHERE numeroFactura = ${req.params.numero}
+  `;
+
   try {
     const dbResponse = await db.run(statement);
     const lastId = dbResponse.stmt.lastID;
