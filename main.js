@@ -239,7 +239,8 @@ app.get('/api/factura/all', async (req, res, next) => {
 
   const itemsQuery = `
   SELECT  FACTURA.numeroFactura, ARTICULO.codigo, ARTICULO.descripcion,
-          ITEM_FACTURA.cantidad, ITEM_FACTURA.precioUnitario, ITEM_FACTURA.descuento AS descuentoItem
+          ITEM_FACTURA.cantidad, ITEM_FACTURA.precioUnitario, ITEM_FACTURA.descuento AS descuentoItem,
+          ITEM_FACTURA.cantidad * ITEM_FACTURA.precioUnitario as precioTotal
   FROM ARTICULO
   INNER JOIN ITEM_FACTURA
     ON ARTICULO.id = ITEM_FACTURA.articuloId
@@ -250,7 +251,8 @@ app.get('/api/factura/all', async (req, res, next) => {
   UNION
   
   SELECT  FACTURA.numeroFactura, "MISCELANEA" as codigo, ITEM_MISC.descripcion,
-          1 as cantidad, ITEM_MISC.precio as precioUnitario, 0 AS descuentoItem
+          1 as cantidad, ITEM_MISC.precio as precioUnitario, 0 AS descuentoItem,
+          ITEM_MISC.precio AS precioTotal
   FROM FACTURA
   INNER JOIN ITEM_MISC
     ON FACTURA.id = ITEM_MISC.facturaId
