@@ -213,7 +213,7 @@ app.get('/api/turno/last', async (req, res, next) => {
 
 // // complex get queries
 app.get('/api/factura/:numero', async (req, res, next) => {
-  if (req.params.id === 'last') return; // ignore /api/factura/last, handled before
+  if (req.params.numero === 'last') return; // ignore /api/factura/last, handled before
 
   const facturasQuery = `
   SELECT numeroFactura, fechaHora, CLIENTE.nombre as cliente, turnoId, VENDEDOR.nombre, descuento, anulada, observaciones
@@ -510,17 +510,28 @@ app.post('/api/factura', async (req, res, next) => {
   next();
 });
 
-app.post('/api/anular/factura/:numero', async (req, res, next) => {
-  const statement = `
+app.get('/api/anular/factura/:numero', async (req, res, next) => {
+  const selectStatement = `
+    SELECT anulada
+    FROM factura
+    WHERE numeroFactura = ${req.params.numero}
+  `;
+
+  const updateStatement = `
     UPDATE factura
     SET ANULADA = 1
     WHERE numeroFactura = ${req.params.numero}
   `;
 
   try {
-    const dbResponse = await db.run(statement);
-    const lastId = dbResponse.stmt.lastID;
-    res.status(201).send({ lastId });
+    const selectResponse = await db.all(selectStatement);
+    const anulada = selectResponse[0].anulada;
+    if (anulada) {
+      console.log('ANULAR', anulada);
+      const updateResponse = await db.run(updateStatement);
+      const lastId = updateResponse.stmt.lastID;
+      res.status(201).send({ lastId });
+    }
   } catch (err) {
     console.log(err);
     res.status(400).send({message: err.message});
