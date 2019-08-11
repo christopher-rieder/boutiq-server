@@ -29,14 +29,36 @@ console.log = function () {
 };
 console.error = console.log;
 
-function LOGGER (...messages) {
-  console.log(...messages);
-}
-
 const db = require('sqlite');
 const Promise = require('bluebird');
 const DATABASE_URI = './database/database.db';
 const DEFAULT_PORT = 3000;
+
+// utility functions
+
+function LOGGER (...messages) {
+  console.log(...messages);
+}
+
+// escape text and add quotes `"`
+function escapeTextAndAddQuotes (req, res, next) {
+  Object.keys(req.body).forEach(key => {
+    if (isNaN(req.body[key]) || req.body[key] === '') {
+      req.body[key] = '"' + req.body[key] + '"';
+    } else if (req.body[key] !== null) {
+      req.body[key] = parseFloat(req.body[key]);
+    }
+  });
+  next();
+}
+
+function headLog (req, res, next) {
+  LOGGER('-'.repeat(40));
+  LOGGER('DATETIME', new Date().toLocaleString());
+  LOGGER('URL:     ', req.url);
+  LOGGER('METHOD:  ', req.method);
+  next();
+}
 
 app.use(function (req, res, next) {
   res.header('Access-Control-Allow-Origin', '*');
@@ -46,42 +68,31 @@ app.use(function (req, res, next) {
   next();
 });
 
-app.use(function (req, res, next) {
-  // escape text and add quotes `"`
-  Object.keys(req.body).forEach(key => {
-    if (isNaN(req.body[key]) || req.body[key] === '') {
-      req.body[key] = '"' + req.body[key] + '"';
-    } else if (req.body[key] !== null) {
-      req.body[key] = parseFloat(req.body[key]);
-    }
-  });
-  next();
-});
+app.use(escapeTextAndAddQuotes);
+app.use(headLog);
 
-// LOGGER
-app.use(function (req, res, next) {
-  LOGGER('-'.repeat(40));
-  LOGGER('DATETIME', new Date().toLocaleString());
-  LOGGER('URL:     ', req.url);
-  LOGGER('METHOD:  ', req.method);
-  next();
-});
-
+// build generic sql insert and update statements for most querys
+// the body object properties names are the same names of the columns
+// the value of those properties are the values stored in the corresponing column
+// so the object properties need to match a column in the table in the database,
+// pased as second parameter
 function parseColumns (body, table) {
-  const cols = Object.keys(body).filter(e => e !== 'id');
+  const cols = Object.keys(body).filter(e => e !== 'id'); // do not update ids
   const colValuesInsert = cols.map(col => body[col]);
   const insertStatement = `INSERT INTO ${table} (${cols}) VALUES (${colValuesInsert})`;
 
   const colValuesUpdate = cols.map(col => `${col}=${body[col]}`);
   const updateStatement = `UPDATE ${table} SET ${colValuesUpdate} WHERE ID = ${body.id}`;
 
-  if (isNaN(body.id)) { // NEW ITEM
+  if (isNaN(body.id)) { // new item, id not existent or not a number
     return insertStatement;
   } else {
     return updateStatement;
   }
 }
 
+// build stock update statement
+// suma is a boolean parameter that indicates if the value is added or substracted
 function updateStockStatement (id, cant, suma) {
   return `
     UPDATE ARTICULO
@@ -92,16 +103,16 @@ function updateStockStatement (id, cant, suma) {
 
 /* SIMPLE GET FOR CRUD TABLES */
 const crudTables = ['cliente', 'vendedor', 'proveedor'];
-const crudEndpoints = crudTables.map(tabla => '/api/' + tabla);
-app.get(crudEndpoints, (req, res, next) => {
+const crudEndpointsFullTable = crudTables.map(tabla => '/api/' + tabla);
+app.get(crudEndpointsFullTable, (req, res, next) => {
   const tabla = req.path.split('/')[2];
   res.selectQuery = `SELECT * FROM ${tabla}`;
   next();
 });
 
 /* SIMPLE GET ITEM FOR CRUD TABLES */
-const crudEndpointsItems = crudEndpoints.map(e => e + '/:id');
-app.get(crudEndpointsItems, (req, res, next) => {
+const crudEndpointsById = crudEndpointsFullTable.map(e => e + '/:id');
+app.get(crudEndpointsById, (req, res, next) => {
   const tabla = req.path.split('/')[2];
   res.selectQuery = `SELECT * FROM ${tabla} WHERE ID=${req.params.id}`;
   next();
@@ -117,6 +128,7 @@ app.get('/api/compra/last', (req, res, next) => {
   next();
 });
 
+// UGLY HACK. HOW TO PROCESS 'Ñ' ???
 app.get('/api/se%C3%B1a/last', (req, res, next) => {
   res.selectQuery = `SELECT MAX(numeroSeña) AS lastId FROM SEÑA`;
   next();
@@ -134,44 +146,47 @@ app.get('/api/rawTables/:tabla', (req, res, next) => {
 
 app.get('/api/pago/pendientes', (req, res, next) => {
   res.selectQuery = `
-  SELECT PAGO.*, ESTADO_PAGO.nombre AS estado, TIPO_PAGO.nombre AS tipoPago,
-         FACTURA.fechaHora, FACTURA.numeroFactura
-  FROM PAGO
-  INNER JOIN FACTURA
-    ON PAGO.facturaId = FACTURA.id
-  INNER JOIN TIPO_PAGO
-    ON PAGO.tipoPagoId = TIPO_PAGO.id
-  INNER JOIN ESTADO_PAGO
-    ON PAGO.estadoId = ESTADO_PAGO.id
-  `;
+  SELECT *
+  FROM PAGOS_PENDIENTES`;
   next();
 });
 
 app.get('/api/articulo/codigo/:codigo', (req, res, next) => {
   res.selectQuery = `
-  SELECT ARTICULO.*, 
-         MARCA.id as marcaId, MARCA.nombre as marcaNombre,
-         RUBRO.id as rubroId, RUBRO.nombre as rubroNombre
-  FROM ARTICULO
-  INNER JOIN MARCA
-    ON ARTICULO.marcaId = MARCA.id
-  INNER JOIN RUBRO
-    ON ARTICULO.rubroId = RUBRO.id
+  SELECT *
+  FROM ARTICULO_VIEW
   WHERE codigo = '${req.params.codigo}'`;
   next();
 });
 
 app.get('/api/articulo/id/:id', (req, res, next) => {
   res.selectQuery = `
-  SELECT ARTICULO.*, 
-         MARCA.id as marcaId, MARCA.nombre as marcaNombre,
-         RUBRO.id as rubroId, RUBRO.nombre as rubroNombre
-  FROM ARTICULO
-  INNER JOIN MARCA
-    ON ARTICULO.marcaId = MARCA.id
-  INNER JOIN RUBRO
-    ON ARTICULO.rubroId = RUBRO.id
-  WHERE ARTICULO.id = '${req.params.id}'`;
+  SELECT *
+  FROM ARTICULO_VIEW
+  WHERE id = '${req.params.id}'`;
+  next();
+});
+
+app.get('/api/caja/actual', async (req, res, next) => {
+  const currentDate = dateFormat(new Date(), DATE_FORMAT_STRING);
+  res.selectQuery = `
+  SELECT *
+  FROM CAJA
+  WHERE fecha = '${currentDate}'`;
+  next();
+});
+
+app.get('/api/caja/resumen/:id', async (req, res, next) => {
+  res.selectQuery = `
+  SELECT documento, numero, descripcion, cantidad, valor
+  FROM RESUMEN_CAJA WHERE cajaId=${req.params.id}`;
+  next();
+});
+
+app.get('/api/turno/resumen/:id', async (req, res, next) => {
+  res.itemsQuery = `
+  SELECT documento, numero, descripcion, cantidad, valor
+  FROM RESUMEN_CAJA WHERE turnoId=${req.params.id}`;
   next();
 });
 
@@ -190,19 +205,20 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// complex get queries
 app.get('/api/turno/last', async (req, res, next) => {
   const selectQuery = `
   SELECT *
-  FROM TURNO 
-  WHERE id=(SELECT MAX(id) FROM TURNO)`;
+  FROM LAST_TURNO`;
 
   try {
     const results = await db.all(selectQuery);
-    const vendedorId = results[0].vendedorId;
+    const id = results[0].vendedorId;
+    const nombre = results[0].nombre;
     delete results[0].vendedorId;
+    delete results[0].nombre;
     results[0].cerrado = !!(results[0].fechaHoraCierre);
-    const vendedor = await db.all(`SELECT * FROM VENDEDOR WHERE id=${vendedorId}`);
-    results[0].vendedor = vendedor[0];
+    results[0].vendedor = {id, nombre};
     res.status(200).json(results);
   } catch (err) {
     console.log(err);
@@ -211,7 +227,6 @@ app.get('/api/turno/last', async (req, res, next) => {
   next();
 });
 
-// // complex get queries
 app.get('/api/factura/:numero', async (req, res, next) => {
   if (req.params.numero === 'last') return; // ignore /api/factura/last, handled before
 
@@ -397,60 +412,7 @@ app.get('/api/retiro/:numero', async (req, res, next) => {
   next();
 });
 
-app.get('/api/caja/actual', async (req, res, next) => {
-  const currentDate = dateFormat(new Date(), DATE_FORMAT_STRING);
-  const selectQuery = `
-  SELECT *
-  FROM CAJA
-  WHERE fecha = '${currentDate}'
-  `;
-
-  try {
-    const results = await db.all(selectQuery);
-    console.log('currsession', results);
-    res.status(200).json(results);
-  } catch (err) {
-    console.log(err);
-    res.status(400).json({message: err.message});
-  }
-  next();
-});
-
-app.get('/api/caja/resumen/:id', async (req, res, next) => {
-  const selectQuery = `
-  SELECT documento, numero, descripcion, cantidad, valor
-  FROM RESUMEN_CAJA WHERE cajaId=${req.params.id}
-  `;
-
-  try {
-    const results = await db.all(selectQuery);
-    res.status(200).json(results);
-  } catch (err) {
-    console.log(err);
-    res.status(400).json({message: err.message});
-  }
-  next();
-});
-
-app.get('/api/turno/resumen/:id', async (req, res, next) => {
-  const itemsQuery = `
-  SELECT documento, numero, descripcion, cantidad, valor
-  FROM RESUMEN_CAJA WHERE turnoId=${req.params.id}
-  `;
-
-  try {
-    const items = await db.all(itemsQuery);
-    const results = {
-      items
-    };
-    res.status(200).json(results);
-  } catch (err) {
-    console.log(err);
-    res.status(400).json({message: err.message});
-  }
-  next();
-});
-
+// post endpoints
 app.post('/api/crud/:table', async (req, res, next) => {
   const statement = parseColumns(req.body, req.params.table);
   console.log(statement);
